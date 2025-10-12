@@ -9,6 +9,7 @@ const DIFF_MAPPING = { 0: "Past", 1: "Present", 2: "Future", 3: "Beyond", 4: "Et
 // 全局状态
 let currentSongTitle = "ARC_Song";
 let songlistJson = {};
+let songBasePath = ""; // 存储歌曲文件所在的基路径
 
 // 初始化
 document.addEventListener('DOMContentLoaded', function() {
@@ -98,7 +99,6 @@ function clearLogs() {
     logsContainer.innerHTML = '';
     addLog('info', '日志已清空');
 }
-
 // 更新进度
 function updateProgress(percent, text) {
     const progressText = document.getElementById('progressText');
@@ -146,6 +146,23 @@ function showSuccess(message, downloadUrl, fileName) {
     addLog('success', `打包完成: ${fileName}`);
 }
 
+// 检查文件路径是否在跳过列表中（以_开头的文件夹）
+function shouldSkipPath(filePath) {
+    if (!filePath) return false;
+    
+    // 将路径分割为目录部分
+    const pathParts = filePath.split('/');
+    
+    // 检查每个目录部分是否以_开头
+    for (const part of pathParts) {
+        if (part.startsWith('_') && part.length > 1) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
 // 解压ZIP文件
 async function unzipSongPackage(zipBuffer) {
     updateProgress(10, "解压ZIP文件中...");
@@ -155,29 +172,124 @@ async function unzipSongPackage(zipBuffer) {
     const zipContent = await zip.loadAsync(zipBuffer);
     const files = {};
     
-    // 读取所有文件到内存
+    // 读取所有文件到内存，跳过_开头的文件夹
     const fileEntries = Object.entries(zipContent.files);
     let fileCount = 0;
+    let skippedCount = 0;
     
-    for (const [fileName, file] of fileEntries) {
+    for (const [filePath, file] of fileEntries) {
         if (file.dir) continue;
         
+        // 跳过_开头的文件夹中的文件
+        if (shouldSkipPath(filePath)) {
+            skippedCount++;
+            addLog('info', `跳过文件: ${filePath} (位于_开头文件夹中)`);
+            continue;
+        }
+        
         // 只处理需要的文件类型
-        if (fileName.endsWith('.aff') || 
-            fileName === 'base.jpg' || 
-            fileName === 'base.ogg' || 
-            fileName === 'slst.txt') {
+        if (filePath.endsWith('.aff') || 
+            filePath.includes('base.jpg') || 
+            filePath.includes('base.ogg') || 
+            filePath.includes('slst.txt')) {
             
             const fileData = await file.async('uint8array');
-            files[fileName] = fileData;
+            files[filePath] = fileData;
             fileCount++;
             
-            addLog('info', `读取文件: ${fileName} (${(fileData.length / 1024).toFixed(1)}KB)`);
+            addLog('info', `读取文件: ${filePath} (${(fileData.length / 1024).toFixed(1)}KB)`);
         }
     }
     
-    addLog('success', `ZIP解压完成，共读取 ${fileCount} 个文件`);
+    addLog('success', `ZIP解压完成，共读取 ${fileCount} 个文件，跳过 ${skippedCount} 个文件`);
     return files;
+}
+
+// 在文件映射中查找必需的文件
+function findRequiredFiles(files) {
+    const result = {
+        base_cover: null,
+        base_audio: null,
+        song_config: null,
+        affFiles: []
+    };
+    
+    // 首先尝试在根目录查找
+    for (const [filePath, fileData] of Object.entries(files)) {
+        const fileName = filePath.split('/').pop(); // 获取文件名
+        
+        if (fileName === 'base.jpg' && !result.base_cover) {
+            result.base_cover = { path: filePath, data: fileData };
+        } else if (fileName === 'base.ogg' && !result.base_audio) {
+            result.base_audio = { path: filePath, data: fileData };
+        } else if (fileName === 'slst.txt' && !result.song_config) {
+            result.song_config = { path: filePath, data: fileData };
+        } else if (fileName.endsWith('.aff')) {
+            result.affFiles.push({ path: filePath, data: fileData });
+        }
+    }
+    
+    // 如果根目录没找到，尝试在所有文件夹中查找
+    if (!result.base_cover || !result.base_audio || !result.song_config) {
+        addLog('warning', '根目录未找到所有必需文件，开始在子文件夹中搜索...');
+        
+        for (const [filePath, fileData] of Object.entries(files)) {
+            const fileName = filePath.split('/').pop();
+            
+            if (fileName === 'base.jpg' && !result.base_cover) {
+                result.base_cover = { path: filePath, data: fileData };
+                addLog('info', `在子文件夹中找到: base.jpg (${filePath})`);
+            } else if (fileName === 'base.ogg' && !result.base_audio) {
+                result.base_audio = { path: filePath, data: fileData };
+                addLog('info', `在子文件夹中找到: base.ogg (${filePath})`);
+            } else if (fileName === 'slst.txt' && !result.song_config) {
+                result.song_config = { path: filePath, data: fileData };
+                addLog('info', `在子文件夹中找到: slst.txt (${filePath})`);
+            }
+        }
+    }
+        // 确定歌曲基路径（大多数文件所在的目录）
+    if (result.base_cover && result.base_audio && result.song_config) {
+        const paths = [
+            result.base_cover.path,
+            result.base_audio.path, 
+            result.song_config.path
+        ];
+        
+        // 找到共同的路径前缀
+        const commonPath = findCommonPath(paths);
+        songBasePath = commonPath;
+        addLog('info', `确定歌曲基路径: ${songBasePath || '根目录'}`);
+    }
+    
+    return result;
+}
+
+// 找到多个路径的共同前缀
+function findCommonPath(paths) {
+    if (paths.length === 0) return '';
+    
+    // 分割路径为目录数组
+    const pathArrays = paths.map(path => path.split('/').filter(part => part !== ''));
+    
+    // 找到最短的路径长度
+    const minLength = Math.min(...pathArrays.map(arr => arr.length));
+    
+    let commonParts = [];
+    
+    // 逐级比较
+    for (let i = 0; i < minLength; i++) {
+        const currentPart = pathArrays[0][i];
+        const allSame = pathArrays.every(arr => arr[i] === currentPart);
+        
+        if (allSame) {
+            commonParts.push(currentPart);
+        } else {
+            break;
+        }
+    }
+    
+    return commonParts.length > 0 ? commonParts.join('/') + '/' : '';
 }
 
 // 从文件数据中获取歌曲信息
@@ -185,16 +297,17 @@ async function getSongInfoFromFiles(files) {
     updateProgress(30, "解析歌曲配置...");
     addLog('info', '开始解析歌曲配置...');
     
+    // 查找必需文件
+    const requiredFiles = findRequiredFiles(files);
+    
     // 检查必需文件
     const missingFiles = [];
-    for (const fileName of Object.values(REQUIRED_SONG_FILES)) {
-        if (!files[fileName]) {
-            missingFiles.push(fileName);
-            addLog('warning', `缺失必需文件: ${fileName}`);
-        }
-    }
+    if (!requiredFiles.base_cover) missingFiles.push('base.jpg');
+    if (!requiredFiles.base_audio) missingFiles.push('base.ogg');
+    if (!requiredFiles.song_config) missingFiles.push('slst.txt');
     
     if (missingFiles.length > 0) {
+        addLog('error', `缺失必需文件: ${missingFiles.join(', ')}`);
         throw new Error(`缺失基础文件：${missingFiles.join(', ')}`);
     }
 
@@ -202,7 +315,7 @@ async function getSongInfoFromFiles(files) {
 
     // 解析slst配置
     try {
-        const slstData = files[REQUIRED_SONG_FILES.song_config];
+        const slstData = requiredFiles.song_config.data;
         const slstText = new TextDecoder().decode(slstData);
         const songInfo = JSON.parse(slstText);
         const finalSongInfo = songInfo.songs && Array.isArray(songInfo.songs) ? songInfo.songs[0] : songInfo;
@@ -222,9 +335,9 @@ async function getSongInfoFromFiles(files) {
 
         // 收集难度文件
         finalSongInfo.difficulties = [];
-        const affFiles = Object.keys(files).filter(name => name.endsWith('.aff'));
         
-        for (const fileName of affFiles) {
+        for (const affFile of requiredFiles.affFiles) {
+            const fileName = affFile.path.split('/').pop();
             const diff = parseInt(fileName.replace('.aff', ''));
             if (!isNaN(diff) && diff >= 0 && diff <= 4) {
                 finalSongInfo.difficulties.push(diff);
@@ -246,7 +359,6 @@ async function getSongInfoFromFiles(files) {
         throw new Error(`SLST配置文件格式错误: ${error.message}`);
     }
 }
-
 // 创建根配置文件
 async function createRootConfigFiles(files, songInfo, userId) {
     updateProgress(50, "生成配置文件...");
@@ -307,7 +419,17 @@ async function generateProjectFile(files, songInfo, userId) {
         const chartFile = `${diff}.aff`;
         const difficultyName = DIFF_MAPPING[diff] || `未知${diff}`;
         
-        if (!files[chartFile]) {
+        // 查找对应的aff文件
+        let affData = null;
+        for (const [filePath, fileData] of Object.entries(files)) {
+            const fileName = filePath.split('/').pop();
+            if (fileName === chartFile) {
+                affData = fileData;
+                break;
+            }
+        }
+        
+        if (!affData) {
             addLog('warning', `跳过难度 ${difficultyName}: 缺失文件 ${chartFile}`);
             continue;
         }
@@ -371,10 +493,18 @@ async function createARCpkg(files, userId) {
     addLog('info', `创建曲包配置: ${packId}.yml`);
     
     // 添加曲包封面（使用base.jpg）
-    if (files['base.jpg']) {
-        packDir.file(`1080_select_${packId}.png`, files['base.jpg']);
-        addLog('info', '添加曲包封面');
-    } else {
+    let coverFound = false;
+    for (const [filePath, fileData] of Object.entries(files)) {
+        const fileName = filePath.split('/').pop();
+        if (fileName === 'base.jpg') {
+            packDir.file(`1080_select_${packId}.png`, fileData);
+            addLog('info', '添加曲包封面');
+            coverFound = true;
+            break;
+        }
+    }
+    
+    if (!coverFound) {
         addLog('warning', '未找到base.jpg，曲包将使用默认封面');
     }
 
@@ -388,19 +518,35 @@ async function createARCpkg(files, userId) {
 
     // 添加歌曲文件
     const songDir = zip.folder(songId);
-    const requiredFiles = [
+    const requiredFileNames = [
         "base.jpg", "base.ogg", "slst.txt", "project.arcproj",
         ...songlistJson.songs[0].difficulties.map(d => `${d.ratingClass}.aff`)
     ];
     
     let copiedFiles = 0;
-    for (const file of requiredFiles) {
-        if (files[file]) {
-            songDir.file(file, files[file]);
-            copiedFiles++;
-        } else {
-            addLog('warning', `缺失文件: ${file}`);
+    for (const requiredFileName of requiredFileNames) {
+        let fileFound = false;
+        
+        // 在文件映射中查找对应的文件
+        for (const [filePath, fileData] of Object.entries(files)) {
+            const fileName = filePath.split('/').pop();
+            if (fileName === requiredFileName) {
+                songDir.file(requiredFileName, fileData);
+                copiedFiles++;
+                fileFound = true;
+                break;
+            }
         }
+        
+        if (!fileFound && requiredFileName !== 'project.arcproj') {
+            addLog('warning', `缺失文件: ${requiredFileName}`);
+        }
+    }
+    
+    // 添加project.arcproj（这个文件是我们生成的）
+    if (files['project.arcproj']) {
+        songDir.file('project.arcproj', files['project.arcproj']);
+        copiedFiles++;
     }
     
     addLog('info', `复制了 ${copiedFiles} 个文件到歌曲目录`);
@@ -440,6 +586,9 @@ async function processZipFile(file, userId) {
         document.getElementById('errorSection').classList.add('hidden');
         document.getElementById('resultSection').classList.add('hidden');
         
+        // 重置全局状态
+        songBasePath = "";
+        
         addLog('info', `开始处理文件: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
         addLog('info', `使用用户ID: ${userId}`);
 
@@ -476,4 +625,4 @@ async function processZipFile(file, userId) {
         showError(`打包失败：${error.message}`);
         console.error('处理错误:', error);
     }
-}
+        }
