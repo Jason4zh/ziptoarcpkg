@@ -182,36 +182,27 @@ async function unzipSongPackage(zipBuffer) {
     let fileCount = 0;
     
     for (const [fileName, file] of fileEntries) {
-        // 跳过文件夹，且特别跳过名称以"_"开头的文件夹
-        if (file.dir) {
-            const folderName = fileName.split('/')[0];
-            if (folderName.startsWith('_')) {
-                addLog('info', `跳过"_"开头的文件夹: ${folderName}/`);
-            } else {
-                addLog('info', `保留普通文件夹: ${folderName}/`);
-            }
+        // 过滤以_开头的系统隐藏文件/目录
+        if (file.dir || fileName.startsWith('_') || 
+            // 同时保留业务需要的文件格式判断
+            !(fileName.endsWith('.aff') || 
+              fileName === 'base.jpg' || 
+              fileName === 'base.ogg' || 
+              fileName === 'slst.txt' ||
+              fileName === 'songlist')) {
             continue;
         }
         
-        // 提取文件名（去掉路径，只保留文件名）
-        const pureFileName = fileName.split('/').pop();
-        
-        // 仅读取目标文件（.aff、base.jpg、base.ogg、slst.txt）
-        if (pureFileName.endsWith('.aff') || 
-            pureFileName === 'base.jpg' || 
-            pureFileName === 'base.ogg' || 
-            pureFileName === 'slst.txt') {
-            
-            const fileData = await file.async('uint8array');
-            files[pureFileName] = fileData; // 用纯文件名存储，忽略路径
-            fileCount++;
-            addLog('info', `读取文件: ${fileName} (${(fileData.length / 1024).toFixed(1)}KB)`);
-        }
+        const fileData = await file.async('uint8array');
+        files[fileName] = fileData;
+        fileCount++;
+        addLog('info', `读取文件: ${fileName} (${(fileData.length / 1024).toFixed(1)}KB)`);
     }
     
     addLog('success', `ZIP解压完成，共读取 ${fileCount} 个文件`);
     return files;
 }
+
 
 async function getSongInfoFromFiles(files) {
     updateProgress(isBatchProcessing ? null : 30, "解析歌曲配置...");
