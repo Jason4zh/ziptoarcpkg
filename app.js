@@ -180,9 +180,18 @@ async function unzipSongPackage(zipBuffer) {
     const files = {};
     const filePromises = [];
 
-    const traverseFiles = (folder) => {
+    // 递归遍历所有文件和子目录
+    const traverseFiles = (folder, currentPath = '') => {
         Object.entries(folder.files).forEach(([fileName, file]) => {
-            if (file.dir || fileName.startsWith('_')) return;
+            const fullPath = currentPath ? `${currentPath}/${fileName}` : fileName;
+            
+            if (file.dir) {
+                // 如果是目录，递归遍历
+                traverseFiles(file, fullPath);
+                return;
+            }
+            
+            if (fileName.startsWith('_')) return;
             
             // 模糊匹配：只要文件名包含目标后缀/名称，就视为有效文件
             const isTargetFile = fileName.includes('.aff') || 
@@ -193,22 +202,26 @@ async function unzipSongPackage(zipBuffer) {
             
             if (isTargetFile) {
                 const promise = file.async('uint8array').then(fileData => {
-                    files[fileName] = fileData;
-                    addLog('info', `读取文件: ${fileName} (${(fileData.length / 1024).toFixed(1)}KB)`);
+                    // 使用完整路径作为键，但只保留文件名用于后续查找
+                    const simpleFileName = fileName.split('/').pop(); // 只取文件名，去掉路径
+                    files[simpleFileName] = fileData;
+                    addLog('info', `读取文件: ${fullPath} -> ${simpleFileName} (${(fileData.length / 1024).toFixed(1)}KB)`);
                 });
                 filePromises.push(promise);
             }
         });
     };
+    
     traverseFiles(zipContent);
-
     await Promise.all(filePromises);
     
     addLog('success', `ZIP解压完成，共读取 ${filePromises.length} 个目标文件`);
+    
+    // 调试：列出所有找到的文件
+    addLog('debug', `找到的文件列表: ${Object.keys(files).join(', ')}`);
+    
     return files;
 }
-
-
 async function getSongInfoFromFiles(files) {
     updateProgress(isBatchProcessing ? null : 30, "解析歌曲配置...");
     addLog('info', '开始解析歌曲配置...');
