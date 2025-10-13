@@ -170,7 +170,6 @@ function showSuccess(message, downloadUrl, fileName, fileSize) {
     document.getElementById('errorSection').classList.add('hidden');
     addLog('success', `打包完成: ${fileName}`);
 }
-// 解压ZIP文件
 async function unzipSongPackage(zipBuffer) {
     updateProgress(isBatchProcessing ? null : 10, "解压ZIP文件中...");
     addLog('info', '开始解压ZIP文件...');
@@ -178,30 +177,42 @@ async function unzipSongPackage(zipBuffer) {
     const zip = new JSZip();
     const zipContent = await zip.loadAsync(zipBuffer);
     const files = {};
-    const fileEntries = Object.entries(zipContent.files);
     let fileCount = 0;
-    
-    for (const [fileName, file] of fileEntries) {
-        // 过滤以_开头的系统隐藏文件/目录
-        if (file.dir || fileName.startsWith('_') || 
-            // 同时保留业务需要的文件格式判断
-            !(fileName.endsWith('.aff') || 
-              fileName === 'base.jpg' || 
-              fileName === 'base.ogg' || 
-              fileName === 'slst.txt' ||
-              fileName === 'songlist')) {
-            continue;
-        }
-        
-        const fileData = await file.async('uint8array');
-        files[fileName] = fileData;
-        fileCount++;
-        addLog('info', `读取文件: ${fileName} (${(fileData.length / 1024).toFixed(1)}KB)`);
-    }
+    const filePromises = []; // 用于等待所有文件读取完成
+
+    // 递归遍历所有文件（包括子文件夹）
+    const traverseFiles = (folder) => {
+        Object.entries(folder.files).forEach(([fileName, file]) => {
+            if (file.dir) {
+                traverseFiles(file); // 递归处理子文件夹
+                return;
+            }
+            // 匹配目标文件格式，同时过滤系统隐藏文件（如__MACOSX开头）
+            if ((fileName.endsWith('.aff') || 
+                 fileName.endsWith('base.jpg') || 
+                 fileName.endsWith('base.ogg') || 
+                 fileName.endsWith('slst.txt') ||
+                 fileName.endsWith('songlist')) && 
+                !fileName.startsWith('_')) { // 过滤以_开头的系统文件
+                
+                const promise = file.async('uint8array').then(fileData => {
+                    files[fileName] = fileData;
+                    fileCount++;
+                    addLog('info', `读取文件: ${fileName} (${(fileData.length / 1024).toFixed(1)}KB)`);
+                });
+                filePromises.push(promise);
+            }
+        });
+    };
+    traverseFiles(zipContent);
+
+    // 等待所有文件读取完成
+    await Promise.all(filePromises);
     
     addLog('success', `ZIP解压完成，共读取 ${fileCount} 个文件`);
     return files;
 }
+
 
 
 async function getSongInfoFromFiles(files) {
