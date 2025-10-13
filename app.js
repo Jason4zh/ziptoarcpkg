@@ -186,24 +186,24 @@ async function unzipSongPackage(zipBuffer) {
             const fullPath = currentPath ? `${currentPath}/${fileName}` : fileName;
             
             if (file.dir) {
-                // 如果是目录，递归遍历
                 traverseFiles(file, fullPath);
                 return;
             }
             
             if (fileName.startsWith('_')) return;
             
-            // 模糊匹配：只要文件名包含目标后缀/名称，就视为有效文件
-            const isTargetFile = fileName.includes('.aff') || 
-                                fileName.includes('base.jpg') || 
-                                fileName.includes('base.ogg') || 
-                                fileName.includes('slst.txt') ||
-                                fileName.includes('songlist');
+            const simpleFileName = fileName.split('/').pop();
+            
+            // 只处理目标文件，且如果已经找到同名文件就跳过
+            const isTargetFile = (simpleFileName.endsWith('.aff') || 
+                                 simpleFileName === 'base.jpg' || 
+                                 simpleFileName === 'base.ogg' || 
+                                 simpleFileName === 'slst.txt' ||
+                                 simpleFileName === 'songlist') &&
+                                 !files[simpleFileName]; // 关键：确保不覆盖已找到的文件
             
             if (isTargetFile) {
                 const promise = file.async('uint8array').then(fileData => {
-                    // 使用完整路径作为键，但只保留文件名用于后续查找
-                    const simpleFileName = fileName.split('/').pop(); // 只取文件名，去掉路径
                     files[simpleFileName] = fileData;
                     addLog('info', `读取文件: ${fullPath} -> ${simpleFileName} (${(fileData.length / 1024).toFixed(1)}KB)`);
                 });
@@ -215,10 +215,8 @@ async function unzipSongPackage(zipBuffer) {
     traverseFiles(zipContent);
     await Promise.all(filePromises);
     
-    addLog('success', `ZIP解压完成，共读取 ${filePromises.length} 个目标文件`);
-    
-    // 调试：列出所有找到的文件
-    addLog('debug', `找到的文件列表: ${Object.keys(files).join(', ')}`);
+    addLog('success', `ZIP解压完成，共读取 ${Object.keys(files).length} 个目标文件`);
+    addLog('debug', `最终文件列表: ${Object.keys(files).join(', ')}`);
     
     return files;
 }
