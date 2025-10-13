@@ -178,27 +178,22 @@ async function unzipSongPackage(zipBuffer) {
     const zip = new JSZip();
     const zipContent = await zip.loadAsync(zipBuffer);
     const files = {};
-    let fileCount = 0;
     const filePromises = [];
 
     const traverseFiles = (folder) => {
         Object.entries(folder.files).forEach(([fileName, file]) => {
-            if (file.dir) {
-                traverseFiles(file);
-                return;
-            }
-            // 提取纯文件名（去掉路径）
-            const pureFileName = fileName.split('/').pop();
-            if ((pureFileName.endsWith('.aff') || 
-                 pureFileName === 'base.jpg' || 
-                 pureFileName === 'base.ogg' || 
-                 pureFileName === 'slst.txt' ||
-                 pureFileName === 'songlist') && 
-                !fileName.startsWith('_')) {
-                
+            if (file.dir || fileName.startsWith('_')) return;
+            
+            // 模糊匹配：只要文件名包含目标后缀/名称，就视为有效文件
+            const isTargetFile = fileName.includes('.aff') || 
+                                fileName.includes('base.jpg') || 
+                                fileName.includes('base.ogg') || 
+                                fileName.includes('slst.txt') ||
+                                fileName.includes('songlist');
+            
+            if (isTargetFile) {
                 const promise = file.async('uint8array').then(fileData => {
                     files[fileName] = fileData;
-                    fileCount++;
                     addLog('info', `读取文件: ${fileName} (${(fileData.length / 1024).toFixed(1)}KB)`);
                 });
                 filePromises.push(promise);
@@ -209,9 +204,10 @@ async function unzipSongPackage(zipBuffer) {
 
     await Promise.all(filePromises);
     
-    addLog('success', `ZIP解压完成，共读取 ${fileCount} 个文件`);
+    addLog('success', `ZIP解压完成，共读取 ${filePromises.length} 个目标文件`);
     return files;
 }
+
 
 async function getSongInfoFromFiles(files) {
     updateProgress(isBatchProcessing ? null : 30, "解析歌曲配置...");
