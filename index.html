@@ -12,26 +12,23 @@
     <div class="container">
         <header>
             <h1>ZIP转ARCPKG</h1>
-            <p>将你的谱面 ZIP 包转换为 ArcCreate 可用的 arcpkg 格式</p>
+            <p>将你的谱面 ZIP 包转换为 ArcCreate 可用的 ARCpkg 格式（支持批量上传）</p>
         </header>
-
         <div class="config-section">
             <div class="input-group">
                 <label for="userId">用户ID（将作为谱面作者标识）:</label>
                 <input type="text" id="userId" value="Unknown_User" placeholder="输入你的用户ID">
             </div>
         </div>
-
         <div class="upload-section">
             <div class="upload-area" id="uploadArea">
                 <div class="upload-icon">📁</div>
-                <p class="upload-text">拖拽 ZIP 文件到这里，或点击选择文件</p>
-                <p class="upload-hint">支持包含 base.ogg, base.jpg, slst.txt 和 .aff 谱面文件的 ZIP 包</p>
-                <input type="file" id="fileInput" accept=".zip" style="display: none;">
+                <p class="upload-text">拖拽多个ZIP文件到这里，或点击选择文件</p>
+                <p class="upload-hint">支持包含 base.ogg, base.jpg, slst.txt 和 .aff 谱面文件的ZIP包，可批量上传</p>
+                <input type="file" id="fileInput" accept=".zip" multiple style="display: none;">
                 <button class="upload-btn" onclick="document.getElementById('fileInput').click()">选择文件</button>
             </div>
         </div>
-
         <div class="progress-section hidden" id="progressSection">
             <div class="progress-header">
                 <h3>处理进度</h3>
@@ -39,7 +36,6 @@
             </div>
             <progress id="progressBar" value="0" max="100"></progress>
         </div>
-
         <div class="logs-section">
             <div class="logs-header">
                 <h3>处理日志</h3>
@@ -52,14 +48,12 @@
                 </div>
             </div>
         </div>
-
         <div class="result-section hidden" id="resultSection">
             <div class="result-header">
                 <h3>打包结果</h3>
             </div>
             <div id="resultContent"></div>
         </div>
-
         <div class="error-section hidden" id="errorSection">
             <div class="error-header">
                 <h3>错误信息</h3>
@@ -67,7 +61,6 @@
             <div id="errorContent"></div>
         </div>
     </div>
-
     <script src="app.js"></script>
 </body>
 </html>
