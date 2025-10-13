@@ -170,6 +170,7 @@ function showSuccess(message, downloadUrl, fileName, fileSize) {
     document.getElementById('errorSection').classList.add('hidden');
     addLog('success', `打包完成: ${fileName}`);
 }
+
 async function unzipSongPackage(zipBuffer) {
     updateProgress(isBatchProcessing ? null : 10, "解压ZIP文件中...");
     addLog('info', '开始解压ZIP文件...');
@@ -178,22 +179,22 @@ async function unzipSongPackage(zipBuffer) {
     const zipContent = await zip.loadAsync(zipBuffer);
     const files = {};
     let fileCount = 0;
-    const filePromises = []; // 用于等待所有文件读取完成
+    const filePromises = [];
 
-    // 递归遍历所有文件（包括子文件夹）
     const traverseFiles = (folder) => {
         Object.entries(folder.files).forEach(([fileName, file]) => {
             if (file.dir) {
-                traverseFiles(file); // 递归处理子文件夹
+                traverseFiles(file);
                 return;
             }
-            // 匹配目标文件格式，同时过滤系统隐藏文件（如__MACOSX开头）
-            if ((fileName.endsWith('.aff') || 
-                 fileName.endsWith('base.jpg') || 
-                 fileName.endsWith('base.ogg') || 
-                 fileName.endsWith('slst.txt') ||
-                 fileName.endsWith('songlist')) && 
-                !fileName.startsWith('_')) { // 过滤以_开头的系统文件
+            // 提取纯文件名（去掉路径）
+            const pureFileName = fileName.split('/').pop();
+            if ((pureFileName.endsWith('.aff') || 
+                 pureFileName === 'base.jpg' || 
+                 pureFileName === 'base.ogg' || 
+                 pureFileName === 'slst.txt' ||
+                 pureFileName === 'songlist') && 
+                !fileName.startsWith('_')) {
                 
                 const promise = file.async('uint8array').then(fileData => {
                     files[fileName] = fileData;
@@ -206,14 +207,11 @@ async function unzipSongPackage(zipBuffer) {
     };
     traverseFiles(zipContent);
 
-    // 等待所有文件读取完成
     await Promise.all(filePromises);
     
     addLog('success', `ZIP解压完成，共读取 ${fileCount} 个文件`);
     return files;
 }
-
-
 
 async function getSongInfoFromFiles(files) {
     updateProgress(isBatchProcessing ? null : 30, "解析歌曲配置...");
