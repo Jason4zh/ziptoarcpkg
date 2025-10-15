@@ -4,6 +4,16 @@ const REQUIRED_SONG_FILES = {
     song_config: "slst.txt",
     song_config_fallback: "songlist"
 };
+const SONG_FILE_CONFIG = {
+    required: [          // 必须存在的核心文件
+        "base.jpg",      // 封面
+        "base.ogg",      // 音频
+        "slst.txt"       // 主配置文件
+    ],
+    optional: [          // 备选文件（可选存在）
+        "songlist"       // 备用配置文件（仅当slst.txt不存在时才会用到）
+    ]
+};
 const DIFF_MAPPING = { 0: "Past", 1: "Present", 2: "Future", 3: "Beyond", 4: "Eternal" };
 let currentSongTitle = "ARC_Song";
 let songlistJson = {};
@@ -171,128 +181,45 @@ function showSuccess(message, downloadUrl, fileName, fileSize) {
     addLog('success', `打包完成: ${fileName}`);
 }
 
-async function unzipSongPackage(zipBuffer) {
-    updateProgress(isBatchProcessing ? null : 10, "解压ZIP文件中...");
-    addLog('info', '开始解压ZIP文件...');
-    
-    const zip = new JSZip();
-    const zipContent = await zip.loadAsync(zipBuffer);
-    const files = {};
-    const filePromises = [];
-
-    // 递归遍历所有文件和子目录
-    const traverseFiles = (folder, currentPath = '') => {
-        Object.entries(folder.files).forEach(([fileName, file]) => {
-            const fullPath = currentPath ? `${currentPath}/${fileName}` : fileName;
-            
-            if (file.dir) {
-                traverseFiles(file, fullPath);
-                return;
-            }
-            
-            if (fileName.startsWith('_')) return;
-            
-            const simpleFileName = fileName.split('/').pop();
-            
-            // 只处理目标文件，且如果已经找到同名文件就跳过
-            const isTargetFile = (simpleFileName.endsWith('.aff') || 
-                                 simpleFileName === 'base.jpg' || 
-                                 simpleFileName === 'base.ogg' || 
-                                 simpleFileName === 'slst.txt' ||
-                                 simpleFileName === 'songlist') &&
-                                 !files[simpleFileName]; // 关键：确保不覆盖已找到的文件
-            
-            if (isTargetFile) {
-                const promise = file.async('uint8array').then(fileData => {
-                    files[simpleFileName] = fileData;
-                    addLog('info', `读取文件: ${fullPath} -> ${simpleFileName} (${(fileData.length / 1024).toFixed(1)}KB)`);
-                });
-                filePromises.push(promise);
-            }
-        });
-    };
-    
-    traverseFiles(zipContent);
-    await Promise.all(filePromises);
-    
-    addLog('success', `ZIP解压完成，共读取 ${Object.keys(files).length} 个目标文件`);
-    addLog('debug', `最终文件列表: ${Object.keys(files).join(', ')}`);
-    
-    return files;
-}
-async function getSongInfoFromFiles(files) {
-    updateProgress(isBatchProcessing ? null : 30, "解析歌曲配置...");
-    addLog('info', '开始解析歌曲配置...');
-    
-    let songConfigFile = null;
-    if (files[REQUIRED_SONG_FILES.song_config]) {
-        songConfigFile = REQUIRED_SONG_FILES.song_config;
-        addLog('info', `使用歌曲配置文件: ${songConfigFile}`);
-    } else if (files[REQUIRED_SONG_FILES.song_config_fallback]) {
-        songConfigFile = REQUIRED_SONG_FILES.song_config_fallback;
-        addLog('info', `未找到 slst.txt，使用降级配置文件: ${songConfigFile}`);
-    } else {
-        throw new Error(`缺失歌曲配置文件：需提供 slst.txt 或 songlist（无后缀）`);
-    }
-
-    const missingFiles = [];
-    if (!files[REQUIRED_SONG_FILES.base_cover]) missingFiles.push(REQUIRED_SONG_FILES.base_cover);
-    if (!files[REQUIRED_SONG_FILES.base_audio]) missingFiles.push(REQUIRED_SONG_FILES.base_audio);
-    
-    if (missingFiles.length > 0) {
-        throw new Error(`缺失基础文件：${missingFiles.join(', ')}`);
-    }
-    addLog('info', '所有必需文件检查通过');
-    
+async function unzipSongPackage(zipFile) {
     try {
-        const slstData = files[songConfigFile];
-        const slstText = new TextDecoder().decode(slstData);
-        const songInfoRaw = JSON.parse(slstText);
+        const zip = await JSZip.loadAsync(zipFile);
+        const files = {};
+        let hasFoundFiles = false;
 
-        let finalSongInfo;
-        if (songInfoRaw.songs && Array.isArray(songInfoRaw.songs) && songInfoRaw.songs.length > 0) {
-            finalSongInfo = songInfoRaw.songs[0];
-            addLog('info', `解析到 songs 数组，使用第一个元素作为歌曲信息`);
-        } else {
-            finalSongInfo = songInfoRaw;
-            addLog('warning', `未找到 songs 数组，默认使用配置文件最外层作为歌曲信息`);
-        }
+        // 遍历所有文件（不管目录结构，全部提取）
+        for (const zipItem of Object.values(zip.files)) {
+            if (zipItem.dir) continue;
+            if (zipItem.name.includes('__MACOSX')) continue;
 
-        addLog('info', '歌曲配置文件解析成功');
-        
-        if (finalSongInfo.title_localized?.en) {
-            currentSongTitle = finalSongInfo.title_localized.en.replace(/[\\/:*?"<>|]/g, "_");
-            addLog('info', `歌曲名称: ${finalSongInfo.title_localized.en}`);
-        } else if (finalSongInfo.title) {
-            currentSongTitle = finalSongInfo.title.replace(/[\\/:*?"<>|]/g, "_");
-            addLog('info', `歌曲名称: ${finalSongInfo.title}`);
-        } else {
-            addLog('warning', '未找到歌曲名称，使用默认名称');
-        }
-        
-        finalSongInfo.difficulties = [];
-        const affFiles = Object.keys(files).filter(name => name.endsWith('.aff'));
-        
-        for (const fileName of affFiles) {
-            const diff = parseInt(fileName.replace('.aff', ''));
-            if (!isNaN(diff) && diff >= 0 && diff <= 4) {
-                finalSongInfo.difficulties.push(diff);
-                addLog('info', `找到难度文件: ${fileName} (${DIFF_MAPPING[diff]})`);
-            } else {
-                addLog('warning', `忽略无效难度文件: ${fileName}`);
+            const fileName = zipItem.name.split('/').pop();
+            // 只要不是空名就提取
+            if (fileName) {
+                hasFoundFiles = true;
+                files[fileName] = await zipItem.async('arraybuffer');
+                console.log(`找到文件: ${fileName}（路径：${zipItem.name}）`);
             }
         }
-        
-        if (finalSongInfo.difficulties.length === 0) {
-            throw new Error('未找到有效的.aff谱面文件');
+
+        // 检查必需文件
+        const { required } = SONG_FILE_CONFIG;
+        const missingRequiredFiles = required.filter(file => !files[file]);
+        if (missingRequiredFiles.length > 0) {
+            throw new Error(`缺少必需的文件: ${missingRequiredFiles.join(', ')}`);
         }
-        addLog('success', `共找到 ${finalSongInfo.difficulties.length} 个难度`);
-        return finalSongInfo;
+
+        if (!hasFoundFiles) {
+            throw new Error('未找到任何有效的谱面文件');
+        }
+
+        return files;
     } catch (error) {
-        addLog('error', `歌曲配置文件解析失败: ${error.message}`);
-        throw new Error(`配置文件格式错误: ${error.message}`);
+        console.error('解压ZIP文件失败:', error);
+        throw error;
     }
 }
+
+
 
 async function createRootConfigFiles(files, songInfo, userId) {
     updateProgress(isBatchProcessing ? null : 50, "生成配置文件...");
@@ -461,43 +388,201 @@ async function createARCpkg(files, userId) {
 }
 
 async function processZipFile(file, userId) {
-    try {
+    const MAX_FILE_SIZE = 50 * 1024 * 1024;
+    if (file.size > MAX_FILE_SIZE) {
+        throw new Error(`文件过大（${(file.size / 1024 / 1024).toFixed(2)}MB），最大支持50MB`);
+    }
+
+    updateProgress(isBatchProcessing ? null : 5, "读取ZIP文件...");
+    const zipBuffer = await readFileAsArrayBuffer(file);
+    
+    // 解压后处理路径（核心修改点）
+    const rawExtractedFiles = await unzipSongPackage(zipBuffer);
+    const extractedFiles = normalizeExtractedFiles(rawExtractedFiles); // 新增路径规范化
+    
+    addLog('info', `ZIP文件解析完成，共识别 ${Object.keys(extractedFiles).length} 个有效文件`);
+
+    const songInfo = await getSongInfoFromFiles(extractedFiles);
+
+    // 后续打包逻辑保持不变...
+    updateProgress(isBatchProcessing ? null : 60, "生成ARCPKG文件...");
+    const arcpkg = new JSZip();
+    
+    const arcmeta = {
+        id: songInfo.id,
+        name: songInfo.title,
+        artist: songInfo.artist,
+        creator: userId,
+        version: songInfo.version,
+        timestamp: new Date().toISOString(),
+        bpm: songInfo.bpm,
+        side: songInfo.side,
+        background: songInfo.bg,
+        songs: [{
+            title: songInfo.title,
+            artist: songInfo.artist,
+            bpm: songInfo.bpm,
+            jacket: songInfo.jacket,
+            audio: songInfo.audio,
+            difficulties: songInfo.difficulty.map(diff => ({
+                name: diff.name,
+                level: diff.level,
+                chart: diff.file,
+                designer: diff.chartDesigner,
+                rating: diff.rating
+            }))
+        }]
+    };
+    arcpkg.file("arcmeta.yaml", jsyaml.dump(arcmeta));
+
+    Object.entries(extractedFiles).forEach(([fileName, fileData]) => {
+        arcpkg.file(fileName, fileData);
+    });
+
+    // 剩余打包和下载逻辑保持不变...
+    const arcpkgBlob = await arcpkg.generateAsync({ type: "blob" }, (metadata) => {
         if (!isBatchProcessing) {
-            document.getElementById('progressSection').classList.remove('hidden');
-            document.getElementById('errorSection').classList.add('hidden');
-            document.getElementById('resultSection').classList.add('hidden');
+            const progress = 60 + Math.round(metadata.percent / 100 * 30);
+            updateProgress(progress, `打包中（${Math.round(metadata.percent)}%）`);
+        }
+    });
+
+    const safeTitle = songInfo.title.replace(/[^\w\-]/g, '_');
+    const fileName = `${songInfo.id}_${safeTitle}_${userId}.arcpkg`;
+    const downloadUrl = URL.createObjectURL(arcpkgBlob);
+    
+    showSuccess(
+        `歌曲《${songInfo.title}》打包完成`,
+        downloadUrl,
+        fileName,
+        arcpkgBlob.size
+    );
+
+    setTimeout(() => URL.revokeObjectURL(downloadUrl), 60000);
+}
+function normalizeExtractedFiles(zipEntries) {
+    const normalized = {};
+    const IGNORED_FOLDERS = ['__MACOSX/', '.DS_Store']; // 忽略macOS系统文件
+    
+    for (const [fullPath, fileData] of Object.entries(zipEntries)) {
+        // 跳过系统文件夹和隐藏文件
+        if (IGNORED_FOLDERS.some(prefix => fullPath.startsWith(prefix))) {
+            continue;
+        }
+        
+        // 提取文件名（去掉所有父目录路径）
+        const fileName = fullPath.split('/').pop();
+        // 避免文件名冲突（如果不同目录有同名文件，保留最后一个）
+        normalized[fileName] = fileData;
+    }
+    
+    return normalized;
+}
+
+
+// 辅助函数：读取文件为ArrayBuffer
+function readFileAsArrayBuffer(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error("文件读取失败"));
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+async function getSongInfoFromFiles(files) {
+    updateProgress(isBatchProcessing ? null : 30, "解析歌曲配置...");
+    addLog('info', '开始解析歌曲配置...');
+    
+    let songConfigFile = null;
+    if (files['slst.txt']) {
+        songConfigFile = 'slst.txt';
+        addLog('info', `使用歌曲配置文件: ${songConfigFile}`);
+    } else {
+        throw new Error(`缺失歌曲配置文件：slst.txt`);
+    }
+
+    const missingFiles = [];
+    if (!files['base.jpg']) missingFiles.push('base.jpg');
+    if (!files['base.ogg']) missingFiles.push('base.ogg');
+    
+    if (missingFiles.length > 0) {
+        throw new Error(`缺失基础文件：${missingFiles.join(', ')}`);
+    }
+    addLog('info', '所有必需文件检查通过');
+    
+    try {
+        const slstData = files[songConfigFile];
+        const slstText = new TextDecoder().decode(slstData);
+        const songInfoRaw = JSON.parse(slstText);
+
+        // 兼容原有格式和“单曲对象”格式
+        let songData = null;
+        if (songInfoRaw.songs && Array.isArray(songInfoRaw.songs) && songInfoRaw.songs.length > 0) {
+            songData = songInfoRaw.songs[0];
+        } else if (songInfoRaw.id && songInfoRaw.difficulties) {
+            // 新格式：直接是单曲对象
+            songData = songInfoRaw;
+        } else {
+            throw new Error("配置文件格式错误：未找到有效的歌曲信息（songs数组为空且不是单曲对象）");
         }
 
-        addLog('info', `开始处理文件: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
-        addLog('info', `使用用户ID: ${userId}`);
-        const arrayBuffer = await file.arrayBuffer();
-        
-        const files = await unzipSongPackage(arrayBuffer);
-        const songInfo = await getSongInfoFromFiles(files);
-        await createRootConfigFiles(files, songInfo, userId);
-        await generateProjectFile(files, songInfo, userId);
-        const arcpkgBlob = await createARCpkg(files, userId);
-        
-        // 修复：直接使用arcpkgBlob.size，不修改URL对象
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-        const fileName = `${currentSongTitle}_${timestamp}.arcpkg`;
-        const downloadUrl = URL.createObjectURL(arcpkgBlob);
-        
-        if (!isBatchProcessing) {
-            updateProgress(100, "完成!");
+        const songInfo = {
+            id: songData.id || `unknown_${Date.now()}`,
+            title: songData.title_localized?.en || songData.title || "未知歌曲",
+            artist: songData.artist || "未知艺术家",
+            bpm: songData.bpm_base || parseInt(songData.bpm) || 120,
+            difficulty: [],
+            jacket: 'base.jpg',
+            audio: 'base.ogg',
+            side: songData.side || 1,
+            bg: songData.bg || "default",
+            version: songData.version || "1.0.0"
+        };
+
+        // 处理谱面文件
+        const affFiles = Object.keys(files).filter(name => name.endsWith('.aff'));
+        if (affFiles.length === 0) {
+            throw new Error("未找到任何 .aff 谱面文件");
         }
-        
-        const successMsg = isBatchProcessing 
-            ? `🎉 第 ${completedBatchFiles + 1}/${totalBatchFiles} 个文件打包成功！`
-            : "🎉 打包成功！";
-        // 修复：传递arcpkgBlob.size作为文件大小参数
-        showSuccess(successMsg, downloadUrl, fileName, arcpkgBlob.size);
+
+        const diffFileMap = {};
+        affFiles.forEach(affFile => {
+            const numPrefix = affFile.match(/^(\d+)\./);
+            if (numPrefix) {
+                const ratingClass = parseInt(numPrefix[1]);
+                diffFileMap[ratingClass] = affFile;
+                addLog('info', `匹配谱面: ${DIFF_MAPPING[ratingClass] || `等级${ratingClass}`} -> ${affFile}`);
+            } else {
+                addLog('warning', `未识别的谱面文件命名: ${affFile}`);
+            }
+        });
+
+        if (songData.difficulties && Array.isArray(songData.difficulties)) {
+            songData.difficulties.forEach(diff => {
+                const ratingClass = diff.ratingClass;
+                if (diffFileMap[ratingClass]) {
+                    songInfo.difficulty.push({
+                        level: ratingClass,
+                        name: DIFF_MAPPING[ratingClass] || `难度${ratingClass}`,
+                        file: diffFileMap[ratingClass],
+                        chartDesigner: diff.chartDesigner || "未知",
+                        rating: diff.rating || -1
+                    });
+                }
+            });
+        }
+
+        if (songInfo.difficulty.length === 0) {
+            throw new Error("未匹配到任何有效谱面");
+        }
+
+        currentSongTitle = songInfo.title;
+        addLog('success', `歌曲信息解析完成: ${songInfo.title}（${songInfo.difficulty.length}个难度）`);
+        return songInfo;
 
     } catch (error) {
-        if (!isBatchProcessing) {
-            updateProgress(0, "处理失败");
-        }
-        showError(`打包失败：${error.message}`);
+        addLog('error', `配置解析失败: ${error.message}`);
         throw error;
     }
 }
