@@ -11,7 +11,7 @@ const SONG_FILE_CONFIG = {
         "slst.txt"       // 主配置文件
     ],
     optional: [          // 备选文件（可选存在）
-        "songlist"       // 备用配置文件（仅当slst.txt不存在时才会用到）
+        "songlist.txt"       // 备用配置文件（仅当slst.txt不存在时才会用到）
     ]
 };
 const DIFF_MAPPING = { 0: "Past", 1: "Present", 2: "Future", 3: "Beyond", 4: "Eternal" };
@@ -319,12 +319,17 @@ async function createARCpkg(files, userId) {
     addLog('info', '开始创建ARCpkg包...');
     
     const zip = new JSZip();
-    const packId = songlistJson.songs[0]?.set || "pack001";
-    const songId = songlistJson.songs[0]?.id || "root_song";
+    
+    // 根据截图，曲包ID应该是"base"，歌曲ID应该是类似"labyrintho..."的名称
+    const packId = "base"; // 固定为base，如截图所示
+    const songId = songlistJson.songs[0]?.id || "song_" + Date.now();
     
     addLog('info', `曲包ID: ${packId}, 歌曲ID: ${songId}`);
     
+    // 1. 创建曲包目录和配置文件（如截图中的base目录）
     const packDir = zip.folder(packId);
+    
+    // 曲包配置文件（base.yml）
     const packYml = {
         packName: `Pack ${packId}`,
         imagePath: `1080_select_${packId}.png`,
@@ -333,30 +338,42 @@ async function createARCpkg(files, userId) {
     packDir.file(`${packId}.yml`, jsyaml.dump(packYml));
     addLog('info', `创建曲包配置: ${packId}.yml`);
     
+    // 曲包封面（从base.jpg复制并重命名）
     if (files['base.jpg']) {
         packDir.file(`1080_select_${packId}.png`, files['base.jpg']);
-        addLog('info', '添加曲包封面');
+        addLog('info', '添加曲包封面: 1080_select_base.png');
     } else {
         addLog('warning', '未找到base.jpg，曲包将使用默认封面');
     }
     
+    // 2. 创建歌曲目录（如截图中的labyrintho...目录）
     const songDir = zip.folder(songId);
-    const requiredFiles = [
-        "base.jpg", "base.ogg", "slst.txt", "project.arcproj",
-        ...songlistJson.songs[0].difficulties.map(d => `${d.ratingClass}.aff`)
+    
+    // 复制所有必要的歌曲文件到歌曲目录
+    const requiredSongFiles = [
+        "base.jpg", "base.ogg", "slst.txt", "project.arcproj"
     ];
     
+    // 添加所有.aff谱面文件
+    const affFiles = Object.keys(files).filter(name => name.endsWith('.aff'));
+    requiredSongFiles.push(...affFiles);
+    
     let copiedFiles = 0;
-    for (const file of requiredFiles) {
+    for (const file of requiredSongFiles) {
         if (files[file]) {
             songDir.file(file, files[file]);
             copiedFiles++;
+            addLog('debug', `复制文件到歌曲目录: ${file}`);
+        } else if (file.endsWith('.aff')) {
+            // 对于.aff文件，缺失是正常的（不是所有难度都有）
+            addLog('debug', `跳过缺失的谱面文件: ${file}`);
         } else {
             addLog('warning', `缺失文件: ${file}`);
         }
     }
     addLog('info', `复制了 ${copiedFiles} 个文件到歌曲目录`);
     
+    // 3. 创建根目录的index.yml文件
     const indexYml = [
         {
             directory: packId,
@@ -396,59 +413,27 @@ async function processZipFile(file, userId) {
     updateProgress(isBatchProcessing ? null : 5, "读取ZIP文件...");
     const zipBuffer = await readFileAsArrayBuffer(file);
     
-    // 解压后处理路径（核心修改点）
+    // 解压ZIP文件
     const rawExtractedFiles = await unzipSongPackage(zipBuffer);
-    const extractedFiles = normalizeExtractedFiles(rawExtractedFiles); // 新增路径规范化
+    const extractedFiles = normalizeExtractedFiles(rawExtractedFiles);
     
     addLog('info', `ZIP文件解析完成，共识别 ${Object.keys(extractedFiles).length} 个有效文件`);
 
+    // 解析歌曲信息
     const songInfo = await getSongInfoFromFiles(extractedFiles);
 
-    // 后续打包逻辑保持不变...
-    updateProgress(isBatchProcessing ? null : 60, "生成ARCPKG文件...");
-    const arcpkg = new JSZip();
+    // 生成根配置文件（songlist等）
+    await createRootConfigFiles(extractedFiles, songInfo, userId);
     
-    const arcmeta = {
-        id: songInfo.id,
-        name: songInfo.title,
-        artist: songInfo.artist,
-        creator: userId,
-        version: songInfo.version,
-        timestamp: new Date().toISOString(),
-        bpm: songInfo.bpm,
-        side: songInfo.side,
-        background: songInfo.bg,
-        songs: [{
-            title: songInfo.title,
-            artist: songInfo.artist,
-            bpm: songInfo.bpm,
-            jacket: songInfo.jacket,
-            audio: songInfo.audio,
-            difficulties: songInfo.difficulty.map(diff => ({
-                name: diff.name,
-                level: diff.level,
-                chart: diff.file,
-                designer: diff.chartDesigner,
-                rating: diff.rating
-            }))
-        }]
-    };
-    arcpkg.file("arcmeta.yaml", jsyaml.dump(arcmeta));
+    // 生成project.arcproj文件
+    await generateProjectFile(extractedFiles, songInfo, userId);
 
-    Object.entries(extractedFiles).forEach(([fileName, fileData]) => {
-        arcpkg.file(fileName, fileData);
-    });
+    // 创建ARCpkg包
+    const arcpkgBlob = await createARCpkg(extractedFiles, userId);
 
-    // 剩余打包和下载逻辑保持不变...
-    const arcpkgBlob = await arcpkg.generateAsync({ type: "blob" }, (metadata) => {
-        if (!isBatchProcessing) {
-            const progress = 60 + Math.round(metadata.percent / 100 * 30);
-            updateProgress(progress, `打包中（${Math.round(metadata.percent)}%）`);
-        }
-    });
-
+    // 生成下载
     const safeTitle = songInfo.title.replace(/[^\w\-]/g, '_');
-    const fileName = `${songInfo.id}_${safeTitle}_${userId}.arcpkg`;
+    const fileName = `${songId}_${safeTitle}_${userId}.arcpkg`;
     const downloadUrl = URL.createObjectURL(arcpkgBlob);
     
     showSuccess(
