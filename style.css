@@ -3,6 +3,7 @@
     padding: 0;
     box-sizing: border-box;
 }
+
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     line-height: 1.6;
@@ -11,6 +12,7 @@ body {
     min-height: 100vh;
     padding: 20px;
 }
+
 .container {
     max-width: 1000px;
     margin: 0 auto;
@@ -19,40 +21,43 @@ body {
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
     overflow: hidden;
 }
+
+/* 头部样式 */
 header {
     background: linear-gradient(135deg, #2c3e50, #34495e);
     color: white;
     padding: 30px;
     text-align: center;
 }
+
 header h1 {
     font-size: 2.2em;
     margin-bottom: 8px;
 }
+
 header p {
     opacity: 0.9;
     font-size: 1.1em;
 }
-.config-section, .upload-section, .progress-section, .logs-section, .result-section, .error-section {
+
+/* 通用区域样式 */
+.upload-section, .progress-section, .logs-section, .result-section, .error-section {
     padding: 25px;
     border-bottom: 1px solid #eee;
 }
-/* 结果区域增加滚动条（批量下载时） */
-.result-section {
-    padding: 25px;
-    border-bottom: 1px solid #eee;
-    max-height: 400px;
-    overflow-y: auto;
-}
+
+/* 配置项样式 */
 .input-group {
     margin-bottom: 15px;
 }
+
 .input-group label {
     display: block;
     margin-bottom: 8px;
     font-weight: 600;
     color: #2c3e50;
 }
+
 .input-group input {
     width: 100%;
     padding: 12px;
@@ -61,10 +66,13 @@ header p {
     font-size: 16px;
     transition: border-color 0.3s;
 }
+
 .input-group input:focus {
     outline: none;
     border-color: #667eea;
 }
+
+/* 上传区域样式 */
 .upload-area {
     border: 3px dashed #bdc3c7;
     border-radius: 10px;
@@ -73,25 +81,31 @@ header p {
     transition: all 0.3s ease;
     background: #f8f9fa;
 }
+
 .upload-area.dragover {
     border-color: #667eea;
     background: #e3f2fd;
     transform: scale(1.02);
 }
+
 .upload-icon {
     font-size: 3em;
     margin-bottom: 15px;
 }
+
 .upload-text {
     font-size: 1.3em;
     font-weight: 600;
     color: #2c3e50;
     margin-bottom: 10px;
 }
+
 .upload-hint {
     color: #7f8c8d;
     margin-bottom: 20px;
 }
+
+/* 按钮样式 */
 .upload-btn {
     background: linear-gradient(135deg, #667eea, #764ba2);
     color: white;
@@ -102,59 +116,59 @@ header p {
     cursor: pointer;
     transition: transform 0.2s, box-shadow 0.2s;
 }
+
 .upload-btn:hover {
     transform: translateY(-2px);
     box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
 }
+
+/* 进度条样式 */
 .progress-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 15px;
 }
+
 .progress-header h3 {
     color: #2c3e50;
 }
+
 #progressText {
     font-weight: 600;
     color: #667eea;
 }
+
 progress {
     width: 100%;
     height: 12px;
     border-radius: 6px;
     overflow: hidden;
 }
+
 progress::-webkit-progress-bar {
     background: #ecf0f1;
     border-radius: 6px;
 }
+
 progress::-webkit-progress-value {
     background: linear-gradient(135deg, #667eea, #764ba2);
     border-radius: 6px;
     transition: width 0.3s ease;
 }
+
+/* 日志区域样式 */
 .logs-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 15px;
 }
+
 .logs-header h3 {
     color: #2c3e50;
 }
-.clear-logs-btn {
-    background: #e74c3c;
-    color: white;
-    border: none;
-    padding: 8px 16px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 14px;
-}
-.clear-logs-btn:hover {
-    background: #c0392b;
-}
+
 .logs-container {
     max-height: 300px;
     overflow-y: auto;
@@ -165,47 +179,45 @@ progress::-webkit-progress-value {
     font-family: 'Courier New', monospace;
     font-size: 14px;
 }
+
 .log-entry {
     padding: 5px 0;
     border-bottom: 1px solid #eee;
     display: flex;
     align-items: flex-start;
 }
+
 .log-entry:last-child {
     border-bottom: none;
 }
+
 .log-time {
     color: #7f8c8d;
     min-width: 120px;
     font-size: 12px;
 }
+
 .log-message {
     flex: 1;
     word-break: break-word;
 }
-.log-entry.info .log-message {
-    color: #2c3e50;
+
+.log-entry.info .log-message { color: #2c3e50; }
+.log-entry.warning .log-message { color: #f39c12; }
+.log-entry.error .log-message { color: #e74c3c; font-weight: 600; }
+.log-entry.success .log-message { color: #27ae60; font-weight: 600; }
+
+/* 结果区域样式 */
+.result-section {
+    max-height: 400px;
+    overflow-y: auto;
 }
-.log-entry.warning .log-message {
-    color: #f39c12;
-}
-.log-entry.error .log-message {
-    color: #e74c3c;
-    font-weight: 600;
-}
-.log-entry.success .log-message {
-    color: #27ae60;
-    font-weight: 600;
-}
-.result-header, .error-header {
-    margin-bottom: 15px;
-}
+
 .result-header h3 {
     color: #27ae60;
+    margin-bottom: 15px;
 }
-.error-header h3 {
-    color: #e74c3c;
-}
+
 .download-btn {
     display: inline-block;
     background: linear-gradient(135deg, #27ae60, #2ecc71);
@@ -216,69 +228,38 @@ progress::-webkit-progress-value {
     font-weight: 600;
     font-size: 16px;
     transition: transform 0.2s, box-shadow 0.2s;
-    text-align: center;
     margin-bottom: 10px;
 }
+
 .download-btn:hover {
     transform: translateY(-2px);
     box-shadow: 0 5px 15px rgba(39, 174, 96, 0.4);
 }
-footer {
-    padding: 20px;
-    text-align: center;
-    color: #7f8c8d;
-    font-size: 14px;
+
+/* 错误区域样式 */
+.error-header h3 {
+    color: #e74c3c;
+    margin-bottom: 15px;
 }
+
+#errorContent {
+    color: #e74c3c;
+    font-size: 16px;
+}
+
+/* 隐藏类 */
 .hidden {
     display: none !important;
 }
-/* 滚动条样式 */
-.logs-container::-webkit-scrollbar,
-.result-section::-webkit-scrollbar {
-    width: 6px;
-}
-.logs-container::-webkit-scrollbar-track,
-.result-section::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 3px;
-}
-.logs-container::-webkit-scrollbar-thumb,
-.result-section::-webkit-scrollbar-thumb {
-    background: #bdc3c7;
-    border-radius: 3px;
-}
-.logs-container::-webkit-scrollbar-thumb:hover,
-.result-section::-webkit-scrollbar-thumb:hover {
-    background: #95a5a6;
-}
-/* 响应式设计 */
+
+/* 响应式适配 */
 @media (max-width: 768px) {
-    body {
-        padding: 10px;
-    }
-    .container {
-        border-radius: 8px;
-    }
-    header {
-        padding: 20px;
-    }
-    header h1 {
-        font-size: 1.8em;
-    }
-    .config-section, .upload-section, .progress-section, .logs-section, .result-section, .error-section {
-        padding: 20px;
-    }
-    .upload-area {
-        padding: 30px 20px;
-    }
-    .log-entry {
-        flex-direction: column;
-    }
-    .log-time {
-        min-width: auto;
-        margin-bottom: 2px;
-    }
-    .result-section {
-        max-height: 300px;
-    }
+    body { padding: 10px; }
+    .container { border-radius: 8px; }
+    header { padding: 20px; }
+    header h1 { font-size: 1.8em; }
+    .upload-section, .progress-section, .logs-section, .result-section, .error-section { padding: 20px; }
+    .upload-area { padding: 30px 20px; }
+    .log-entry { flex-direction: column; }
+    .log-time { min-width: auto; margin-bottom: 2px; }
 }

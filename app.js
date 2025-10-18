@@ -1,8 +1,8 @@
 const REQUIRED_SONG_FILES = {
     base_cover: "base.jpg",
-    base_audio: "base.ogg", 
+    base_audio: "base.ogg",
     song_config: "slst.txt",
-    song_config_fallback: "songlist"
+    song_config_fallback: "songlist.txt"
 };
 const SONG_FILE_CONFIG = {
     required: [          // 必须存在的核心文件
@@ -21,7 +21,7 @@ let isBatchProcessing = false;
 let totalBatchFiles = 0;
 let completedBatchFiles = 0;
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     updateCurrentTime();
     setInterval(updateCurrentTime, 1000);
     setupEventListeners();
@@ -30,33 +30,35 @@ document.addEventListener('DOMContentLoaded', function() {
 function updateCurrentTime() {
     const now = new Date();
     const timeString = now.toLocaleTimeString('zh-CN');
-    document.getElementById('currentTime').textContent = `[${timeString}]`;
+    const timeElement = document.getElementById('currentTime');
+    if (timeElement) {
+        timeElement.textContent = `[${timeString}]`;
+    }
 }
 
 function setupEventListeners() {
     const fileInput = document.getElementById('fileInput');
     const uploadArea = document.getElementById('uploadArea');
 
-    fileInput.addEventListener('change', function(e) {
+    fileInput.addEventListener('change', function (e) {
         if (e.target.files.length > 0) {
-            const userId = document.getElementById('userId').value || 'Unknown_User';
             const selectedFiles = Array.from(e.target.files);
-            startBatchProcessing(selectedFiles, userId);
+            startBatchProcessing(selectedFiles);
         }
     });
 
-    uploadArea.addEventListener('dragover', function(e) {
+    uploadArea.addEventListener('dragover', function (e) {
         e.preventDefault();
         uploadArea.classList.add('dragover');
     });
-    uploadArea.addEventListener('dragleave', function(e) {
+    uploadArea.addEventListener('dragleave', function (e) {
         e.preventDefault();
         uploadArea.classList.remove('dragover');
     });
-    uploadArea.addEventListener('drop', function(e) {
+    uploadArea.addEventListener('drop', function (e) {
         e.preventDefault();
         uploadArea.classList.remove('dragover');
-        
+
         if (e.dataTransfer.files.length > 0) {
             const userId = document.getElementById('userId').value || 'Unknown_User';
             const zipFiles = Array.from(e.dataTransfer.files).filter(file => file.name.endsWith('.zip'));
@@ -64,21 +66,16 @@ function setupEventListeners() {
                 addLog('error', '请上传ZIP格式的文件');
                 return;
             }
-            startBatchProcessing(zipFiles, userId);
-        }
-    });
-
-    document.getElementById('userId').addEventListener('input', function(e) {
-        if (e.target.value.trim()) {
-            addLog('info', `用户ID已更新: ${e.target.value}`);
+            startBatchProcessing(zipFiles);
         }
     });
 }
 
-function startBatchProcessing(files, userId) {
+function startBatchProcessing(files) {
     isBatchProcessing = true;
     totalBatchFiles = files.length;
     completedBatchFiles = 0;
+    let failedCount = 0; // 新增：单独记录失败数量
     addLog('info', `=== 开始批量处理，共 ${totalBatchFiles} 个ZIP文件 ===`);
 
     document.getElementById('progressSection').classList.remove('hidden');
@@ -88,21 +85,21 @@ function startBatchProcessing(files, userId) {
         for (const file of files) {
             try {
                 addLog('info', `\n--- 开始处理第 ${completedBatchFiles + 1}/${totalBatchFiles} 个文件：${file.name} ---`);
-                await processZipFile(file, userId);
-                completedBatchFiles++;
+                await processZipFile(file);
+                completedBatchFiles++; // 只有成功时才增加完成计数
                 const batchPercent = Math.round((completedBatchFiles / totalBatchFiles) * 100);
                 updateProgress(batchPercent, `已完成 ${completedBatchFiles}/${totalBatchFiles} 个文件`);
             } catch (error) {
-                completedBatchFiles++;
-                const batchPercent = Math.round((completedBatchFiles / totalBatchFiles) * 100);
-                updateProgress(batchPercent, `处理失败（${completedBatchFiles}/${totalBatchFiles}）`);
-                addLog('error', `第 ${completedBatchFiles}/${totalBatchFiles} 个文件处理失败：${error.message}`);
+                failedCount++; // 失败时增加失败计数
+                const batchPercent = Math.round(((completedBatchFiles + failedCount) / totalBatchFiles) * 100);
+                updateProgress(batchPercent, `处理失败（${completedBatchFiles + failedCount}/${totalBatchFiles}）`);
+                addLog('error', `第 ${completedBatchFiles + failedCount}/${totalBatchFiles} 个文件处理失败：${error.message}`);
             }
         }
 
         isBatchProcessing = false;
-        const failedCount = totalBatchFiles - completedBatchFiles;
-        addLog('success', `\n=== 批量处理结束！共处理 ${totalBatchFiles} 个文件，成功 ${completedBatchFiles - failedCount} 个，失败 ${failedCount} 个 ===`);
+        const successCount = totalBatchFiles - failedCount; // 成功数 = 总数 - 失败数
+        addLog('success', `\n=== 批量处理结束！共处理 ${totalBatchFiles} 个文件，成功 ${successCount} 个，失败 ${failedCount} 个 ===`);
     })();
 }
 
@@ -110,29 +107,23 @@ function addLog(type, message) {
     const logsContainer = document.getElementById('logsContainer');
     const now = new Date();
     const timeString = now.toLocaleTimeString('zh-CN');
-    
+
     const logEntry = document.createElement('div');
     logEntry.className = `log-entry ${type}`;
     logEntry.innerHTML = `
         <span class="log-time">[${timeString}]</span>
         <span class="log-message">${message}</span>
     `;
-    
+
     logsContainer.appendChild(logEntry);
     logsContainer.scrollTop = logsContainer.scrollHeight;
     console.log(`[${type.toUpperCase()}] ${message}`);
 }
 
-function clearLogs() {
-    const logsContainer = document.getElementById('logsContainer');
-    logsContainer.innerHTML = '';
-    addLog('info', '日志已清空');
-}
-
 function updateProgress(percent, text) {
     const progressText = document.getElementById('progressText');
     const progressBar = document.getElementById('progressBar');
-    
+
     progressText.textContent = text || `${percent}%`;
     progressBar.value = percent;
     document.getElementById('progressSection').classList.remove('hidden');
@@ -141,13 +132,13 @@ function updateProgress(percent, text) {
 function showError(message) {
     const errorSection = document.getElementById('errorSection');
     const errorContent = document.getElementById('errorContent');
-    
+
     errorContent.textContent = message;
     errorSection.classList.remove('hidden');
     if (!isBatchProcessing) {
         document.getElementById('resultSection').classList.add('hidden');
     }
-    
+
     addLog('error', message);
 }
 
@@ -155,7 +146,7 @@ function showError(message) {
 function showSuccess(message, downloadUrl, fileName, fileSize) {
     const resultSection = document.getElementById('resultSection');
     const resultContent = document.getElementById('resultContent');
-    
+
     const resultHtml = `
         <div style="margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px dashed #eee;">
             <p>${message}</p>
@@ -202,12 +193,18 @@ async function unzipSongPackage(zipFile) {
         }
 
         // 检查必需文件
-        const { required } = SONG_FILE_CONFIG;
-        const missingRequiredFiles = required.filter(file => !files[file]);
+        const { required, optional } = SONG_FILE_CONFIG;
+
+        console.log(required, optional);
+        const missingRequiredFiles = required.filter(file => {
+            if (file === 'slst.txt') {
+                return !files[file] && !files['songlist.txt'];
+            }
+            return !files[file];
+        });
         if (missingRequiredFiles.length > 0) {
             throw new Error(`缺少必需的文件: ${missingRequiredFiles.join(', ')}`);
         }
-
         if (!hasFoundFiles) {
             throw new Error('未找到任何有效的谱面文件');
         }
@@ -221,13 +218,13 @@ async function unzipSongPackage(zipFile) {
 
 
 
-async function createRootConfigFiles(files, songInfo, userId) {
+async function createRootConfigFiles(files, songInfo) {
     updateProgress(isBatchProcessing ? null : 50, "生成配置文件...");
     addLog('info', '开始生成配置文件...');
-    
+
     const SAMPLE_SONGS = { 'root_song': songInfo };
     const packIds = new Set([songInfo.set || "pack001"]);
-    
+
     const packlistData = {
         packs: Array.from(packIds).map(pid => ({
             id: pid,
@@ -236,9 +233,11 @@ async function createRootConfigFiles(files, songInfo, userId) {
     };
     files['packlist'] = new TextEncoder().encode(JSON.stringify(packlistData, null, 2));
     addLog('info', `生成packlist: ${Array.from(packIds).join(', ')}`);
-    
+
     const songlistData = { songs: [] };
     for (const [folderName, songInfoItem] of Object.entries(SAMPLE_SONGS)) {
+        // 修复：确保 difficulties 为数组
+        const difficultiesArr = Array.isArray(songInfoItem.difficulties) ? songInfoItem.difficulties : [];
         const processedSong = {
             id: songInfoItem.id || folderName,
             title_localized: songInfoItem.title_localized || { en: currentSongTitle },
@@ -247,8 +246,8 @@ async function createRootConfigFiles(files, songInfo, userId) {
             bpm: songInfoItem.bpm || "200",
             bpm_base: songInfoItem.bpm_base || 200.0,
             set: songInfoItem.set || "pack001",
-            difficulties: songInfoItem.difficulties.map(diff => ({
-                chartDesigner: typeof diff === 'object' ? (diff.chartDesigner || userId) : userId,
+            difficulties: difficultiesArr.map(diff => ({
+                chartDesigner: typeof diff === 'object' ? (diff.chartDesigner || songInfoItem.chartDesigner || "Unknown Designer") : songInfoItem.chartDesigner || "Unknown Designer",
                 rating: typeof diff === 'object' ? (diff.rating || -1) : -1,
                 ratingPlus: typeof diff === 'object' ? (diff.ratingPlus || false) : false,
                 ratingClass: typeof diff === 'object' ? diff.ratingClass : diff
@@ -256,7 +255,7 @@ async function createRootConfigFiles(files, songInfo, userId) {
         };
         songlistData.songs.push(processedSong);
     }
-    
+
     files['songlist'] = new TextEncoder().encode(JSON.stringify(songlistData, null, 2));
     songlistJson = songlistData;
     addLog('success', `生成songlist完成，包含 ${songlistData.songs.length} 首歌曲`);
@@ -266,26 +265,48 @@ async function createRootConfigFiles(files, songInfo, userId) {
 async function generateProjectFile(files, songInfo, userId) {
     updateProgress(isBatchProcessing ? null : 70, "生成ARC项目文件...");
     addLog('info', '开始生成ARC项目文件...');
-    
+
     const song = songlistJson.songs[0];
     const res = { charts: [] };
     let validCharts = 0;
-    
-    for (const chart of song.difficulties) {
+
+    // 修复：如果song.difficulties为空，则自动从.aff文件生成
+    let difficultiesArr = Array.isArray(song.difficulties) ? song.difficulties : [];
+    if (difficultiesArr.length === 0) {
+        // 自动识别所有.aff文件
+        const affFiles = Object.keys(files).filter(name => name.endsWith('.aff'));
+        for (const affFile of affFiles) {
+            const numPrefix = affFile.match(/^(\d+)\./);
+            if (numPrefix) {
+                const ratingClass = parseInt(numPrefix[1]);
+                difficultiesArr.push({
+                    chartDesigner: userId,
+                    rating: -1,
+                    ratingPlus: false,
+                    ratingClass: ratingClass
+                });
+                addLog('info', `自动识别谱面文件: ${affFile}，难度等级: ${ratingClass}`);
+            } else {
+                addLog('warning', `未识别的谱面文件命名: ${affFile}`);
+            }
+        }
+    }
+
+    for (const chart of difficultiesArr) {
         const diff = chart.ratingClass;
         const chartFile = `${diff}.aff`;
         const difficultyName = DIFF_MAPPING[diff] || `未知${diff}`;
-        
+
         if (!files[chartFile]) {
             addLog('warning', `跳过难度 ${difficultyName}: 缺失文件 ${chartFile}`);
             continue;
         }
-        
+
         const diffColors = ['#3A6B78FF', '#566947FF', '#482B54FF', '#7C1C30FF', '#433455FF'];
         const difficultyText = chart.rating !== -1
             ? `${difficultyName} ${chart.rating}${chart.ratingPlus ? '+' : ''}`
             : difficultyName;
-        
+
         res.charts.push({
             chartPath: chartFile,
             audioPath: "base.ogg",
@@ -304,7 +325,7 @@ async function generateProjectFile(files, songInfo, userId) {
         validCharts++;
         addLog('info', `添加难度: ${difficultyText}`);
     }
-    
+
     if (res.charts.length > 0) {
         const yamlData = jsyaml.dump(res, { encoding: "utf-8" });
         files['project.arcproj'] = new TextEncoder().encode(yamlData);
@@ -317,18 +338,18 @@ async function generateProjectFile(files, songInfo, userId) {
 async function createARCpkg(files, userId) {
     updateProgress(isBatchProcessing ? null : 90, "创建ARCpkg包...");
     addLog('info', '开始创建ARCpkg包...');
-    
+
     const zip = new JSZip();
-    
+
     // 根据截图，曲包ID应该是"base"，歌曲ID应该是类似"labyrintho..."的名称
     const packId = "base"; // 固定为base，如截图所示
     const songId = songlistJson.songs[0]?.id || "song_" + Date.now();
-    
+
     addLog('info', `曲包ID: ${packId}, 歌曲ID: ${songId}`);
-    
+
     // 1. 创建曲包目录和配置文件（如截图中的base目录）
     const packDir = zip.folder(packId);
-    
+
     // 曲包配置文件（base.yml）
     const packYml = {
         packName: `Pack ${packId}`,
@@ -337,7 +358,7 @@ async function createARCpkg(files, userId) {
     };
     packDir.file(`${packId}.yml`, jsyaml.dump(packYml));
     addLog('info', `创建曲包配置: ${packId}.yml`);
-    
+
     // 曲包封面（从base.jpg复制并重命名）
     if (files['base.jpg']) {
         packDir.file(`1080_select_${packId}.png`, files['base.jpg']);
@@ -345,19 +366,19 @@ async function createARCpkg(files, userId) {
     } else {
         addLog('warning', '未找到base.jpg，曲包将使用默认封面');
     }
-    
+
     // 2. 创建歌曲目录（如截图中的labyrintho...目录）
     const songDir = zip.folder(songId);
-    
+
     // 复制所有必要的歌曲文件到歌曲目录
     const requiredSongFiles = [
-        "base.jpg", "base.ogg", "slst.txt", "project.arcproj"
+        "base.jpg", "base.ogg", "project.arcproj", "songlist.txt", "slst.txt"
     ];
-    
+
     // 添加所有.aff谱面文件
     const affFiles = Object.keys(files).filter(name => name.endsWith('.aff'));
     requiredSongFiles.push(...affFiles);
-    
+
     let copiedFiles = 0;
     for (const file of requiredSongFiles) {
         if (files[file]) {
@@ -372,7 +393,7 @@ async function createARCpkg(files, userId) {
         }
     }
     addLog('info', `复制了 ${copiedFiles} 个文件到歌曲目录`);
-    
+
     // 3. 创建根目录的index.yml文件
     const indexYml = [
         {
@@ -392,14 +413,14 @@ async function createARCpkg(files, userId) {
     ];
     zip.file("index.yml", jsyaml.dump(indexYml));
     addLog('info', '创建索引文件: index.yml');
-    
+
     addLog('info', '正在压缩文件...');
     const arcpkgBlob = await zip.generateAsync({
         type: "blob",
         compression: "DEFLATE",
         compressionOptions: { level: 9 }
     });
-    
+
     addLog('success', `ARCpkg创建完成，大小: ${(arcpkgBlob.size / 1024 / 1024).toFixed(2)}MB`);
     return arcpkgBlob;
 }
@@ -412,11 +433,12 @@ async function processZipFile(file, userId) {
 
     updateProgress(isBatchProcessing ? null : 5, "读取ZIP文件...");
     const zipBuffer = await readFileAsArrayBuffer(file);
-    
+
     // 解压ZIP文件
     const rawExtractedFiles = await unzipSongPackage(zipBuffer);
     const extractedFiles = normalizeExtractedFiles(rawExtractedFiles);
-    
+    console.log('规范化后的文件列表:', Object.keys(extractedFiles));
+
     addLog('info', `ZIP文件解析完成，共识别 ${Object.keys(extractedFiles).length} 个有效文件`);
 
     // 解析歌曲信息
@@ -424,18 +446,18 @@ async function processZipFile(file, userId) {
 
     // 生成根配置文件（songlist等）
     await createRootConfigFiles(extractedFiles, songInfo, userId);
-    
+
     // 生成project.arcproj文件
     await generateProjectFile(extractedFiles, songInfo, userId);
 
     // 创建ARCpkg包
     const arcpkgBlob = await createARCpkg(extractedFiles, userId);
 
-    // 生成下载
+    // 直接用谱面名命名
     const safeTitle = songInfo.title.replace(/[^\w\-]/g, '_');
-    const fileName = `${songId}_${safeTitle}_${userId}.arcpkg`;
+    const fileName = `${safeTitle}.arcpkg`;
     const downloadUrl = URL.createObjectURL(arcpkgBlob);
-    
+
     showSuccess(
         `歌曲《${songInfo.title}》打包完成`,
         downloadUrl,
@@ -448,19 +470,19 @@ async function processZipFile(file, userId) {
 function normalizeExtractedFiles(zipEntries) {
     const normalized = {};
     const IGNORED_FOLDERS = ['__MACOSX/', '.DS_Store']; // 忽略macOS系统文件
-    
+
     for (const [fullPath, fileData] of Object.entries(zipEntries)) {
         // 跳过系统文件夹和隐藏文件
         if (IGNORED_FOLDERS.some(prefix => fullPath.startsWith(prefix))) {
             continue;
         }
-        
+
         // 提取文件名（去掉所有父目录路径）
         const fileName = fullPath.split('/').pop();
         // 避免文件名冲突（如果不同目录有同名文件，保留最后一个）
         normalized[fileName] = fileData;
     }
-    
+
     return normalized;
 }
 
@@ -478,24 +500,29 @@ function readFileAsArrayBuffer(file) {
 async function getSongInfoFromFiles(files) {
     updateProgress(isBatchProcessing ? null : 30, "解析歌曲配置...");
     addLog('info', '开始解析歌曲配置...');
-    
+
     let songConfigFile = null;
     if (files['slst.txt']) {
         songConfigFile = 'slst.txt';
         addLog('info', `使用歌曲配置文件: ${songConfigFile}`);
     } else {
-        throw new Error(`缺失歌曲配置文件：slst.txt`);
+        if (files['songlist.txt']) {
+            songConfigFile = 'songlist.txt';
+            addLog('info', `使用备用歌曲配置文件: ${songConfigFile}`);
+        } else {
+            throw new Error(`缺失歌曲配置文件`);
+        }
     }
 
     const missingFiles = [];
     if (!files['base.jpg']) missingFiles.push('base.jpg');
     if (!files['base.ogg']) missingFiles.push('base.ogg');
-    
+
     if (missingFiles.length > 0) {
         throw new Error(`缺失基础文件：${missingFiles.join(', ')}`);
     }
     addLog('info', '所有必需文件检查通过');
-    
+
     try {
         const slstData = files[songConfigFile];
         const slstText = new TextDecoder().decode(slstData);
