@@ -14,6 +14,10 @@ const SONG_FILE_CONFIG = {
         "songlist.txt"       // 备用配置文件（仅当slst.txt不存在时才会用到）
     ]
 };
+const SUPABASE_URL = 'https://hwlzunfsvcjxtjdeiuns.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh3bHp1bmZzdmNqeHRqZGVpdW5zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEwOTg3MzMsImV4cCI6MjA3NjY3NDczM30.44XtqidKR61vv9znx2LW6oGGZAP-javBk5Gpweli5T8';
+const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 const DIFF_MAPPING = { 0: "Past", 1: "Present", 2: "Future", 3: "Beyond", 4: "Eternal" };
 let currentSongTitle = "ARC_Song";
 let songlistJson = {};
@@ -25,6 +29,7 @@ document.addEventListener('DOMContentLoaded', function () {
     updateCurrentTime();
     setInterval(updateCurrentTime, 1000);
     setupEventListeners();
+    updateConversionStats();
 });
 
 function updateCurrentTime() {
@@ -457,7 +462,21 @@ async function processZipFile(file, userId) {
     const safeTitle = songInfo.title.replace(/[^\w\-]/g, '_');
     const fileName = `${safeTitle}.arcpkg`;
     const downloadUrl = URL.createObjectURL(arcpkgBlob);
-
+try {
+    const { data, error } = await supabase
+        .from('times')
+        .update({ times: supabase.raw('times + 1') })
+        .eq('id', 1);
+    
+    if (error) {
+        console.error('更新次数失败:', error);
+    } else {
+        console.log('上传次数已更新');
+        updateConversionStats()
+    }
+} catch (err) {
+    console.error('Supabase操作异常:', err);
+}
     showSuccess(
         `歌曲《${songInfo.title}》打包完成`,
         downloadUrl,
@@ -597,4 +616,31 @@ async function getSongInfoFromFiles(files) {
         addLog('error', `配置解析失败: ${error.message}`);
         throw error;
     }
+}
+async function fetchConversionStats() {
+  try {
+    const { data, error } = await supabase
+      .from('times')
+      .select('times')
+      .eq('id', 1)
+      .single();
+
+    if (error) {
+      console.error('获取统计数据失败:', error);
+      return 0;
+    }
+
+    return data?.times || 0;
+  } catch (err) {
+    console.error('获取统计数据时发生错误:', err);
+    return 0;
+  }
+}
+
+async function updateConversionStats() {
+  const count = await fetchConversionStats();
+  const countElement = document.getElementById('successCount');
+  if (countElement) {
+    countElement.textContent = count;
+  }
 }
