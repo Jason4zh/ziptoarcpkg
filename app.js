@@ -465,7 +465,7 @@ async function processZipFile(file, userId) {
 try {
     const { data, error } = await supabase
         .from('times')
-        .update({ times: supabase.raw('times + 1') })
+        .update({ times: parseInt(document.getElementById('successCount').textContent) + 1})
         .eq('id', 1);
     
     if (error) {
