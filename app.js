@@ -622,7 +622,6 @@ async function fetchConversionStats() {
     const { data, error } = await supabase
       .from('times')
       .select('times')
-      .eq('id', 1)
       .single();
 
     if (error) {
