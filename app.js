@@ -16,7 +16,8 @@ const SONG_FILE_CONFIG = {
 };
 const SUPABASE_URL = 'https://hwlzunfsvcjxtjdeiuns.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh3bHp1bmZzdmNqeHRqZGVpdW5zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEwOTg3MzMsImV4cCI6MjA3NjY3NDczM30.44XtqidKR61vv9znx2LW6oGGZAP-javBk5Gpweli5T8';
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const { createClient } = supabase;
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const DIFF_MAPPING = { 0: "Past", 1: "Present", 2: "Future", 3: "Beyond", 4: "Eternal" };
 let currentSongTitle = "ARC_Song";
