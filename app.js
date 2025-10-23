@@ -7,10 +7,10 @@ const REQUIRED_SONG_FILES = {
 const SONG_FILE_CONFIG = {
     required: [          // 必须存在的核心文件
         "base.jpg",      // 封面
-        "base.ogg",      // 音频
-        "slst.txt"       // 主配置文件
+        "base.ogg"     // 音乐
     ],
-    optional: [          // 备选文件（可选存在）
+    optional: [   
+        "slst.txt",
         "songlist.txt"       // 备用配置文件（仅当slst.txt不存在时才会用到）
     ]
 };
@@ -234,11 +234,7 @@ async function unzipSongPackage(zipFile) {
         console.log(required, optional);
         
         // 只检查 base.jpg 和 base.ogg，不检查 slst.txt
-        const missingRequiredFiles = required.filter(file => {
-            // 跳过对配置文件的检查
-            if (file === 'slst.txt') return false;
-            return !files[file];
-        });
+        const missingRequiredFiles = required.filter(file => !files[file]);
         
         if (missingRequiredFiles.length > 0) {
             throw new Error(`缺少必需的文件: ${missingRequiredFiles.join(', ')}`);
