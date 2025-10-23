@@ -636,12 +636,24 @@ function showManualInputSection() {
 
 function continueProcessing() {
     document.getElementById('progressSection').classList.remove('hidden');
+    // 关键修改：1. 确保传入userId（若全局有userId变量，直接使用；若无，可设默认值）
+    // 2. 明确基于当前中断的文件恢复处理，避免重复初始化
+    const userId = window.currentUserId || "default_user"; // 假设全局有userId，若无则用默认值
     if (currentProcessingFile) {
-        processZipFile(currentProcessingFile);
+        // 传入userId，恢复当前文件的处理
+        processZipFile(currentProcessingFile, userId)
+            .catch(err => {
+                if (err.message !== '等待手动输入信息') {
+                    addLog('error', `继续处理失败：${err.message}`);
+                }
+            });
     } else if (currentProcessingFiles) {
-        startBatchProcessing(currentProcessingFiles);
+        // 若为批量处理，从当前中断的索引继续，而非重新开始
+        const remainingFiles = currentProcessingFiles.slice(completedBatchFiles + failedCount);
+        startBatchProcessing(remainingFiles);
     }
 }
+
 
 async function fetchConversionStats() {
   try {
