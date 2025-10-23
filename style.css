@@ -263,3 +263,34 @@ progress::-webkit-progress-value {
     .log-entry { flex-direction: column; }
     .log-time { min-width: auto; margin-bottom: 2px; }
 }
+
+/* 手动输入区域样式 */
+.input-section {
+    padding: 25px;
+    border-bottom: 1px solid #eee;
+    background: #f8f9fa;
+}
+
+.continue-btn {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    border: none;
+    padding: 12px 30px;
+    border-radius: 25px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    margin-top: 15px;
+}
+
+.continue-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+}
+
+.continue-btn:disabled {
+    background: #bdc3c7;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}

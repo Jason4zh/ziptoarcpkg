@@ -26,6 +26,19 @@
                 <button class="upload-btn" onclick="document.getElementById('fileInput').click()">选择文件</button>
             </div>
         </div>
+        
+<!-- 手动输入区域 -->
+<div class="input-section hidden" id="inputSection">
+    <div class="input-group">
+        <label for="illustratorInput">曲师 Illustration</label>
+        <input type="text" id="illustratorInput" placeholder="请输入曲师名称">
+    </div>
+    <div class="input-group">
+        <label for="charterInput">谱师 Chart</label>
+        <input type="text" id="charterInput" placeholder="请输入谱师名称">
+    </div>
+    <button class="continue-btn" id="continueBtn">继续处理</button>
+</div>
 
         <!-- 整体进度条（无单个文件进度条） -->
         <div class="progress-section hidden" id="progressSection">
