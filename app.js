@@ -228,15 +228,18 @@ async function unzipSongPackage(zipFile) {
             }
         }
 
+        // 修改：移除对 slst.txt 的必需检查，因为后面会手动处理
         const { required, optional } = SONG_FILE_CONFIG;
 
         console.log(required, optional);
+        
+        // 只检查 base.jpg 和 base.ogg，不检查 slst.txt
         const missingRequiredFiles = required.filter(file => {
-            if (file === 'slst.txt') {
-                return !files[file] && !files['songlist.txt'];
-            }
+            // 跳过对配置文件的检查
+            if (file === 'slst.txt') return false;
             return !files[file];
         });
+        
         if (missingRequiredFiles.length > 0) {
             throw new Error(`缺少必需的文件: ${missingRequiredFiles.join(', ')}`);
         }
@@ -541,6 +544,79 @@ async function getSongInfoFromFiles(files) {
             showManualInputSection();
             throw new Error('等待手动输入信息');
         }
+    }
+
+    const missingFiles = [];
+    if (!files['base.jpg']) missingFiles.push('base.jpg');
+    if (!files['base.ogg']) missingFiles.push('base.ogg');
+
+    if (missingFiles.length > 0) {
+        throw new Error(`缺失基础文件：${missingFiles.join(', ')}`);
+    }
+    addLog('info', '所有必需文件检查通过');
+
+    try {
+        const slstData = files[songConfigFile];
+        const slstText = new TextDecoder().decode(slstData);
+        const songInfoRaw = JSON.parse(slstText);
+
+        let songData = null;
+        if (songInfoRaw.songs && Array.isArray(songInfoRaw.songs) && songInfoRaw.songs.length > 0) {
+            songData = songInfoRaw.songs[0];
+        } else if (songInfoRaw.id && songInfoRaw.difficulties) {
+            songData = songInfoRaw;
+        } else {
+            throw new Error("配置文件格式错误：未找到有效的歌曲信息（songs数组为空且不是单曲对象）");
+        }
+
+        const songInfo = {
+            id: songData.id || `unknown_${Date.now()}`,
+            title: songData.title_localized?.en || songData.title || "未知歌曲",
+            artist: songData.artist || "未知艺术家",
+            bpm: songData.bpm_base || parseInt(songData.bpm) || 120,
+            difficulty: [],
+            jacket: 'base.jpg',
+            audio: 'base.ogg',
+            side: songData.side || 1,
+            bg: songData.bg || "default",
+            version: songData.version || "1.0.0"
+        };
+
+        const affFiles = Object.keys(files).filter(name => name.endsWith('.aff'));
+        if (affFiles.length === 0) {
+            throw new Error("未找到任何 .aff 谱面文件");
+        }
+
+        const diffFileMap = {};
+        affFiles.forEach(affFile => {
+            const numPrefix = affFile.match(/^(\d+)\./);
+            if (numPrefix) {
+                const ratingClass = parseInt(numPrefix[1]);
+                diffFileMap[ratingClass] = affFile;
+                addLog('info', `匹配谱面: ${DIFF_MAPPING[ratingClass] || `等级${ratingClass}`} -> ${affFile}`);
+            } else {
+                addLog('warning', `未识别的谱面文件命名: ${affFile}`);
+            }
+        });
+
+        if (songData.difficulties && Array.isArray(songData.difficulties)) {
+            songData.difficulties.forEach(diff => {
+async function getSongInfoFromFiles(files) {
+    updateProgress(isBatchProcessing ? null : 30, "解析歌曲配置...");
+    addLog('info', '开始解析歌曲配置...');
+
+    let songConfigFile = null;
+    if (files['slst.txt']) {
+        songConfigFile = 'slst.txt';
+        addLog('info', `使用歌曲配置文件: ${songConfigFile}`);
+    } else if (files['songlist.txt']) {
+        songConfigFile = 'songlist.txt';
+        addLog('info', `使用备用歌曲配置文件: ${songConfigFile}`);
+    } else {
+        // 修改：没有配置文件时，显示手动输入并返回等待
+        addLog('warning', '未找到歌曲配置文件，需要手动输入信息');
+        showManualInputSection();
+        throw new Error('等待手动输入信息');
     }
 
     const missingFiles = [];
