@@ -228,14 +228,11 @@ async function unzipSongPackage(zipFile) {
             }
         }
 
-        // 修改：移除对 slst.txt 的必需检查，因为后面会手动处理
-        const { required, optional } = SONG_FILE_CONFIG;
+        // 修复：直接硬编码检查必需文件，不依赖 SONG_FILE_CONFIG
+        const missingRequiredFiles = [];
+        if (!files['base.jpg']) missingRequiredFiles.push('base.jpg');
+        if (!files['base.ogg']) missingRequiredFiles.push('base.ogg');
 
-        console.log(required, optional);
-        
-        // 只检查 base.jpg 和 base.ogg，不检查 slst.txt
-        const missingRequiredFiles = required.filter(file => !files[file]);
-        
         if (missingRequiredFiles.length > 0) {
             throw new Error(`缺少必需的文件: ${missingRequiredFiles.join(', ')}`);
         }
