@@ -5,19 +5,18 @@ const REQUIRED_SONG_FILES = {
     song_config_fallback: "songlist.txt"
 };
 const SONG_FILE_CONFIG = {
-    required: [          // 必须存在的核心文件
-        "base.jpg",      // 封面
-        "base.ogg",      // 音频
-        "slst.txt"       // 主配置文件
+    required: [
+        "base.jpg",
+        "base.ogg",
+        "slst.txt"
     ],
-    optional: [          // 备选文件（可选存在）
-        "songlist.txt"       // 备用配置文件（仅当slst.txt不存在时才会用到）
+    optional: [
+        "songlist.txt"
     ]
 };
 const SUPABASE_URL = 'https://hwlzunfsvcjxtjdeiuns.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh3bHp1bmZzdmNqeHRqZGVpdW5zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEwOTg3MzMsImV4cCI6MjA3NjY3NDczM30.44XtqidKR61vv9znx2LW6oGGZAP-javBk5Gpweli5T8';
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
 const DIFF_MAPPING = { 0: "Past", 1: "Present", 2: "Future", 3: "Beyond", 4: "Eternal" };
 let currentSongTitle = "ARC_Song";
 let songlistJson = {};
@@ -28,6 +27,8 @@ let manualIllustrator = "";
 let manualCharter = "";
 let currentProcessingFile = null;
 let currentProcessingFiles = null;
+let isManualMode = false;
+let failedCount = 0;
 
 document.addEventListener('DOMContentLoaded', function () {
     updateCurrentTime();
@@ -61,14 +62,15 @@ function setupEventListeners() {
         e.preventDefault();
         uploadArea.classList.add('dragover');
     });
+
     uploadArea.addEventListener('dragleave', function (e) {
         e.preventDefault();
         uploadArea.classList.remove('dragover');
     });
+
     uploadArea.addEventListener('drop', function (e) {
         e.preventDefault();
         uploadArea.classList.remove('dragover');
-
         if (e.dataTransfer.files.length > 0) {
             const zipFiles = Array.from(e.dataTransfer.files).filter(file => file.name.endsWith('.zip'));
             if (zipFiles.length === 0) {
@@ -90,6 +92,7 @@ function setupEventListeners() {
         
         manualIllustrator = illustrator;
         manualCharter = charter;
+        isManualMode = true;
         
         document.getElementById('inputSection').classList.add('hidden');
         addLog('info', `已设置手动信息 - 曲师: ${illustrator}, 谱师: ${charter}`);
@@ -102,17 +105,15 @@ function startBatchProcessing(files) {
     isBatchProcessing = true;
     totalBatchFiles = files.length;
     completedBatchFiles = 0;
-    let failedCount = 0;
+    failedCount = 0;
     currentProcessingFiles = files;
     addLog('info', `=== 开始批量处理，共 ${totalBatchFiles} 个ZIP文件 ===`);
-
     document.getElementById('progressSection').classList.remove('hidden');
     updateProgress(0, `等待处理（0/${totalBatchFiles}）`);
-
-    processNextFile(files, failedCount);
+    processNextFile(files);
 }
 
-async function processNextFile(files, failedCount) {
+function processNextFile(files) {
     if (completedBatchFiles + failedCount >= files.length) {
         isBatchProcessing = false;
         const successCount = totalBatchFiles - failedCount;
@@ -130,38 +131,31 @@ async function processNextFile(files, failedCount) {
             const batchPercent = Math.round(((completedBatchFiles + failedCount) / totalBatchFiles) * 100);
             updateProgress(batchPercent, `已完成 ${completedBatchFiles}/${totalBatchFiles} 个文件`);
         } catch (error) {
-            // 关键修改：若错误是“等待手动输入信息”，不增加失败计数，避免流程终止
             if (error.message === '等待手动输入信息') {
                 addLog('info', `第 ${fileIndex + 1}/${totalBatchFiles} 个文件等待手动输入信息`);
-                // 保持进度，不标记失败
                 const batchPercent = Math.round(((completedBatchFiles + failedCount) / totalBatchFiles) * 100);
                 updateProgress(batchPercent, `等待手动输入（${completedBatchFiles + failedCount}/${totalBatchFiles}）`);
-                return; // 退出当前循环，等待用户输入后继续
+                return;
             }
-            // 其他错误正常计数失败
             failedCount++;
             const batchPercent = Math.round(((completedBatchFiles + failedCount) / totalBatchFiles) * 100);
             updateProgress(batchPercent, `处理失败（${completedBatchFiles + failedCount}/${totalBatchFiles}）`);
             addLog('error', `第 ${completedBatchFiles + failedCount}/${totalBatchFiles} 个文件处理失败：${error.message}`);
         }
-        
-        processNextFile(files, failedCount);
+        processNextFile(files);
     })();
 }
-
 
 function addLog(type, message) {
     const logsContainer = document.getElementById('logsContainer');
     const now = new Date();
     const timeString = now.toLocaleTimeString('zh-CN');
-
     const logEntry = document.createElement('div');
     logEntry.className = `log-entry ${type}`;
     logEntry.innerHTML = `
         <span class="log-time">[${timeString}]</span>
         <span class="log-message">${message}</span>
     `;
-
     logsContainer.appendChild(logEntry);
     logsContainer.scrollTop = logsContainer.scrollHeight;
     console.log(`[${type.toUpperCase()}] ${message}`);
@@ -170,7 +164,6 @@ function addLog(type, message) {
 function updateProgress(percent, text) {
     const progressText = document.getElementById('progressText');
     const progressBar = document.getElementById('progressBar');
-
     progressText.textContent = text || `${percent}%`;
     progressBar.value = percent;
     document.getElementById('progressSection').classList.remove('hidden');
@@ -179,20 +172,17 @@ function updateProgress(percent, text) {
 function showError(message) {
     const errorSection = document.getElementById('errorSection');
     const errorContent = document.getElementById('errorContent');
-
     errorContent.textContent = message;
     errorSection.classList.remove('hidden');
     if (!isBatchProcessing) {
         document.getElementById('resultSection').classList.add('hidden');
     }
-
     addLog('error', message);
 }
 
 function showSuccess(message, downloadUrl, fileName, fileSize) {
     const resultSection = document.getElementById('resultSection');
     const resultContent = document.getElementById('resultContent');
-
     const resultHtml = `
         <div style="margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px dashed #eee;">
             <p>${message}</p>
@@ -206,13 +196,11 @@ function showSuccess(message, downloadUrl, fileName, fileSize) {
             </p>
         </div>
     `;
-
     if (isBatchProcessing) {
         resultContent.innerHTML += resultHtml;
     } else {
         resultContent.innerHTML = resultHtml;
     }
-
     resultSection.classList.remove('hidden');
     document.getElementById('errorSection').classList.add('hidden');
     addLog('success', `打包完成: ${fileName}`);
@@ -233,11 +221,9 @@ async function unzipSongPackage(zipFile) {
                 console.log(`找到文件: ${fileName}（路径：${zipItem.name}）`);
             }
         }
-        const { required, optional } = SONG_FILE_CONFIG;
-        console.log(required, optional);
-        // 关键修改：仅检查 base.jpg 和 base.ogg，不强制检查 slst.txt
+        const { required } = SONG_FILE_CONFIG;
         const missingRequiredFiles = required.filter(file => {
-            return file !== 'slst.txt' && !files[file]; 
+            return file !== 'slst.txt' && !files[file];
         });
         if (missingRequiredFiles.length > 0) {
             throw new Error(`缺少必需的文件: ${missingRequiredFiles.join(', ')}`);
@@ -252,14 +238,11 @@ async function unzipSongPackage(zipFile) {
     }
 }
 
-
-async function createRootConfigFiles(files, songInfo) {
+async function createRootConfigFiles(files, songInfo, userId) {
     updateProgress(isBatchProcessing ? null : 50, "生成配置文件...");
     addLog('info', '开始生成配置文件...');
-
     const SAMPLE_SONGS = { 'root_song': songInfo };
     const packIds = new Set([songInfo.set || "pack001"]);
-
     const packlistData = {
         packs: Array.from(packIds).map(pid => ({
             id: pid,
@@ -268,7 +251,6 @@ async function createRootConfigFiles(files, songInfo) {
     };
     files['packlist'] = new TextEncoder().encode(JSON.stringify(packlistData, null, 2));
     addLog('info', `生成packlist: ${Array.from(packIds).join(', ')}`);
-
     const songlistData = { songs: [] };
     for (const [folderName, songInfoItem] of Object.entries(SAMPLE_SONGS)) {
         const difficultiesArr = Array.isArray(songInfoItem.difficulties) ? songInfoItem.difficulties : [];
@@ -289,7 +271,6 @@ async function createRootConfigFiles(files, songInfo) {
         };
         songlistData.songs.push(processedSong);
     }
-
     files['songlist'] = new TextEncoder().encode(JSON.stringify(songlistData, null, 2));
     songlistJson = songlistData;
     addLog('success', `生成songlist完成，包含 ${songlistData.songs.length} 首歌曲`);
@@ -299,11 +280,9 @@ async function createRootConfigFiles(files, songInfo) {
 async function generateProjectFile(files, songInfo, userId) {
     updateProgress(isBatchProcessing ? null : 70, "生成ARC项目文件...");
     addLog('info', '开始生成ARC项目文件...');
-
     const song = songlistJson.songs[0];
     const res = { charts: [] };
     let validCharts = 0;
-
     let difficultiesArr = Array.isArray(song.difficulties) ? song.difficulties : [];
     if (difficultiesArr.length === 0) {
         const affFiles = Object.keys(files).filter(name => name.endsWith('.aff'));
@@ -323,25 +302,20 @@ async function generateProjectFile(files, songInfo, userId) {
             }
         }
     }
-
     for (const chart of difficultiesArr) {
         const diff = chart.ratingClass;
         const chartFile = `${diff}.aff`;
         const difficultyName = DIFF_MAPPING[diff] || `未知${diff}`;
-
         if (!files[chartFile]) {
             addLog('warning', `跳过难度 ${difficultyName}: 缺失文件 ${chartFile}`);
             continue;
         }
-
         const charterName = manualCharter || chart.chartDesigner || userId;
         const artistName = manualIllustrator || songInfo.artist || "Unknown Artist";
-
         const diffColors = ['#3A6B78FF', '#566947FF', '#482B54FF', '#7C1C30FF', '#433455FF'];
         const difficultyText = chart.rating !== -1
             ? `${difficultyName} ${chart.rating}${chart.ratingPlus ? '+' : ''}`
             : difficultyName;
-
         res.charts.push({
             chartPath: chartFile,
             audioPath: "base.ogg",
@@ -360,7 +334,6 @@ async function generateProjectFile(files, songInfo, userId) {
         validCharts++;
         addLog('info', `添加难度: ${difficultyText} (谱师: ${charterName})`);
     }
-
     if (res.charts.length > 0) {
         const yamlData = jsyaml.dump(res, { encoding: "utf-8" });
         files['project.arcproj'] = new TextEncoder().encode(yamlData);
@@ -373,16 +346,11 @@ async function generateProjectFile(files, songInfo, userId) {
 async function createARCpkg(files, userId) {
     updateProgress(isBatchProcessing ? null : 90, "创建ARCpkg包...");
     addLog('info', '开始创建ARCpkg包...');
-
     const zip = new JSZip();
-
     const packId = "base";
     const songId = songlistJson.songs[0]?.id || "song_" + Date.now();
-
     addLog('info', `曲包ID: ${packId}, 歌曲ID: ${songId}`);
-
     const packDir = zip.folder(packId);
-
     const packYml = {
         packName: `Pack ${packId}`,
         imagePath: `1080_select_${packId}.png`,
@@ -390,23 +358,18 @@ async function createARCpkg(files, userId) {
     };
     packDir.file(`${packId}.yml`, jsyaml.dump(packYml));
     addLog('info', `创建曲包配置: ${packId}.yml`);
-
     if (files['base.jpg']) {
         packDir.file(`1080_select_${packId}.png`, files['base.jpg']);
         addLog('info', '添加曲包封面: 1080_select_base.png');
     } else {
         addLog('warning', '未找到base.jpg，曲包将使用默认封面');
     }
-
     const songDir = zip.folder(songId);
-
     const requiredSongFiles = [
         "base.jpg", "base.ogg", "project.arcproj"
     ];
-
     const affFiles = Object.keys(files).filter(name => name.endsWith('.aff'));
     requiredSongFiles.push(...affFiles);
-
     let copiedFiles = 0;
     for (const file of requiredSongFiles) {
         if (files[file]) {
@@ -420,7 +383,6 @@ async function createARCpkg(files, userId) {
         }
     }
     addLog('info', `复制了 ${copiedFiles} 个文件到歌曲目录`);
-
     const indexYml = [
         {
             directory: packId,
@@ -439,81 +401,67 @@ async function createARCpkg(files, userId) {
     ];
     zip.file("index.yml", jsyaml.dump(indexYml));
     addLog('info', '创建索引文件: index.yml');
-
     addLog('info', '正在压缩文件...');
     const arcpkgBlob = await zip.generateAsync({
         type: "blob",
         compression: "DEFLATE",
         compressionOptions: { level: 9 }
     });
-
     addLog('success', `ARCpkg创建完成，大小: ${(arcpkgBlob.size / 1024 / 1024).toFixed(2)}MB`);
     return arcpkgBlob;
 }
 
-async function processZipFile(file, userId) {
+async function processZipFile(file, userId = "default_user") {
     const MAX_FILE_SIZE = 50 * 1024 * 1024;
     if (file.size > MAX_FILE_SIZE) {
         throw new Error(`文件过大（${(file.size / 1024 / 1024).toFixed(2)}MB），最大支持50MB`);
     }
-
     updateProgress(isBatchProcessing ? null : 5, "读取ZIP文件...");
     const zipBuffer = await readFileAsArrayBuffer(file);
-
     const rawExtractedFiles = await unzipSongPackage(zipBuffer);
     const extractedFiles = normalizeExtractedFiles(rawExtractedFiles);
     console.log('规范化后的文件列表:', Object.keys(extractedFiles));
-
     addLog('info', `ZIP文件解析完成，共识别 ${Object.keys(extractedFiles).length} 个有效文件`);
-
     const songInfo = await getSongInfoFromFiles(extractedFiles);
-
     await createRootConfigFiles(extractedFiles, songInfo, userId);
-
     await generateProjectFile(extractedFiles, songInfo, userId);
-
     const arcpkgBlob = await createARCpkg(extractedFiles, userId);
-
     const safeTitle = songInfo.title.replace(/[^\w\-]/g, '_');
     const fileName = `${safeTitle}.arcpkg`;
     const downloadUrl = URL.createObjectURL(arcpkgBlob);
-try {
-    const { data, error } = await supabase
-        .from('times')
-        .update({ times: parseInt(document.getElementById('successCount').textContent) + 1})
-        .eq('id', 1);
-    
-    if (error) {
-        console.error('更新次数失败:', error);
-    } else {
-        console.log('上传次数已更新');
-        updateConversionStats()
+    try {
+        const { data, error } = await supabase
+            .from('times')
+            .update({ times: parseInt(document.getElementById('successCount').textContent) + 1})
+            .eq('id', 1);
+        if (error) {
+            console.error('更新次数失败:', error);
+        } else {
+            console.log('上传次数已更新');
+            updateConversionStats();
+        }
+    } catch (err) {
+        console.error('Supabase操作异常:', err);
     }
-} catch (err) {
-    console.error('Supabase操作异常:', err);
-}
     showSuccess(
         `歌曲《${songInfo.title}》打包完成`,
         downloadUrl,
         fileName,
         arcpkgBlob.size
     );
-
     setTimeout(() => URL.revokeObjectURL(downloadUrl), 60000);
 }
+
 function normalizeExtractedFiles(zipEntries) {
     const normalized = {};
     const IGNORED_FOLDERS = ['__MACOSX/', '.DS_Store'];
-
     for (const [fullPath, fileData] of Object.entries(zipEntries)) {
         if (IGNORED_FOLDERS.some(prefix => fullPath.startsWith(prefix))) {
             continue;
         }
-
         const fileName = fullPath.split('/').pop();
         normalized[fileName] = fileData;
     }
-
     return normalized;
 }
 
@@ -530,35 +478,76 @@ async function getSongInfoFromFiles(files) {
     updateProgress(isBatchProcessing ? null : 30, "解析歌曲配置...");
     addLog('info', '开始解析歌曲配置...');
 
+    if (isManualMode) {
+        addLog('info', '已进入手动模式，使用默认歌曲配置');
+        const affFiles = Object.keys(files).filter(name => name.endsWith('.aff'));
+        if (affFiles.length === 0) {
+            throw new Error("未找到任何 .aff 谱面文件");
+        }
+        const songInfo = {
+            id: `manual_${Date.now()}`,
+            title: "手动配置歌曲",
+            artist: manualIllustrator || "未知艺术家",
+            bpm: 120,
+            difficulty: [],
+            jacket: 'base.jpg',
+            audio: 'base.ogg',
+            side: 1,
+            bg: "default",
+            version: "1.0.0"
+        };
+        const diffFileMap = {};
+        affFiles.forEach(affFile => {
+            const numPrefix = affFile.match(/^(\d+)\./);
+            if (numPrefix) {
+                const ratingClass = parseInt(numPrefix[1]);
+                diffFileMap[ratingClass] = affFile;
+                addLog('info', `匹配谱面: ${DIFF_MAPPING[ratingClass] || `等级${ratingClass}`} -> ${affFile}`);
+            } else {
+                addLog('warning', `未识别的谱面文件命名: ${affFile}`);
+            }
+        });
+        for (const [ratingClass, affFile] of Object.entries(diffFileMap)) {
+            songInfo.difficulty.push({
+                level: parseInt(ratingClass),
+                name: DIFF_MAPPING[ratingClass] || `难度${ratingClass}`,
+                file: affFile,
+                chartDesigner: manualCharter || "未知谱师",
+                rating: -1
+            });
+        }
+        if (songInfo.difficulty.length === 0) {
+            throw new Error("未匹配到任何有效谱面");
+        }
+        currentSongTitle = songInfo.title;
+        addLog('success', `手动模式歌曲信息生成完成: ${songInfo.title}（${songInfo.difficulty.length}个难度）`);
+        return songInfo;
+    }
+
     let songConfigFile = null;
     if (files['slst.txt']) {
         songConfigFile = 'slst.txt';
         addLog('info', `使用歌曲配置文件: ${songConfigFile}`);
+    } else if (files['songlist.txt']) {
+        songConfigFile = 'songlist.txt';
+        addLog('info', `使用备用歌曲配置文件: ${songConfigFile}`);
     } else {
-        if (files['songlist.txt']) {
-            songConfigFile = 'songlist.txt';
-            addLog('info', `使用备用歌曲配置文件: ${songConfigFile}`);
-        } else {
-            addLog('warning', '未找到歌曲配置文件，需要手动输入信息');
-            showManualInputSection();
-            throw new Error('等待手动输入信息');
-        }
+        addLog('warning', '未找到歌曲配置文件，需要手动输入信息');
+        showManualInputSection();
+        throw new Error('等待手动输入信息');
     }
 
     const missingFiles = [];
     if (!files['base.jpg']) missingFiles.push('base.jpg');
     if (!files['base.ogg']) missingFiles.push('base.ogg');
-
     if (missingFiles.length > 0) {
         throw new Error(`缺失基础文件：${missingFiles.join(', ')}`);
     }
     addLog('info', '所有必需文件检查通过');
-
     try {
         const slstData = files[songConfigFile];
         const slstText = new TextDecoder().decode(slstData);
         const songInfoRaw = JSON.parse(slstText);
-
         let songData = null;
         if (songInfoRaw.songs && Array.isArray(songInfoRaw.songs) && songInfoRaw.songs.length > 0) {
             songData = songInfoRaw.songs[0];
@@ -567,7 +556,6 @@ async function getSongInfoFromFiles(files) {
         } else {
             throw new Error("配置文件格式错误：未找到有效的歌曲信息（songs数组为空且不是单曲对象）");
         }
-
         const songInfo = {
             id: songData.id || `unknown_${Date.now()}`,
             title: songData.title_localized?.en || songData.title || "未知歌曲",
@@ -580,12 +568,10 @@ async function getSongInfoFromFiles(files) {
             bg: songData.bg || "default",
             version: songData.version || "1.0.0"
         };
-
         const affFiles = Object.keys(files).filter(name => name.endsWith('.aff'));
         if (affFiles.length === 0) {
             throw new Error("未找到任何 .aff 谱面文件");
         }
-
         const diffFileMap = {};
         affFiles.forEach(affFile => {
             const numPrefix = affFile.match(/^(\d+)\./);
@@ -597,7 +583,6 @@ async function getSongInfoFromFiles(files) {
                 addLog('warning', `未识别的谱面文件命名: ${affFile}`);
             }
         });
-
         if (songData.difficulties && Array.isArray(songData.difficulties)) {
             songData.difficulties.forEach(diff => {
                 const ratingClass = diff.ratingClass;
@@ -612,15 +597,12 @@ async function getSongInfoFromFiles(files) {
                 }
             });
         }
-
         if (songInfo.difficulty.length === 0) {
             throw new Error("未匹配到任何有效谱面");
         }
-
         currentSongTitle = songInfo.title;
         addLog('success', `歌曲信息解析完成: ${songInfo.title}（${songInfo.difficulty.length}个难度）`);
         return songInfo;
-
     } catch (error) {
         addLog('error', `配置解析失败: ${error.message}`);
         throw error;
@@ -636,11 +618,8 @@ function showManualInputSection() {
 
 function continueProcessing() {
     document.getElementById('progressSection').classList.remove('hidden');
-    // 关键修改：1. 确保传入userId（若全局有userId变量，直接使用；若无，可设默认值）
-    // 2. 明确基于当前中断的文件恢复处理，避免重复初始化
-    const userId = window.currentUserId || "default_user"; // 假设全局有userId，若无则用默认值
+    const userId = window.currentUserId || "default_user";
     if (currentProcessingFile) {
-        // 传入userId，恢复当前文件的处理
         processZipFile(currentProcessingFile, userId)
             .catch(err => {
                 if (err.message !== '等待手动输入信息') {
@@ -648,36 +627,31 @@ function continueProcessing() {
                 }
             });
     } else if (currentProcessingFiles) {
-        // 若为批量处理，从当前中断的索引继续，而非重新开始
-        const remainingFiles = currentProcessingFiles.slice(completedBatchFiles + failedCount);
-        startBatchProcessing(remainingFiles);
+        startBatchProcessing(currentProcessingFiles);
     }
 }
 
-
 async function fetchConversionStats() {
-  try {
-    const { data, error } = await supabase
-      .from('times')
-      .select('times')
-      .single();
-
-    if (error) {
-      console.error('获取统计数据失败:', error);
-      return 0;
+    try {
+        const { data, error } = await supabase
+            .from('times')
+            .select('times')
+            .single();
+        if (error) {
+            console.error('获取统计数据失败:', error);
+            return 0;
+        }
+        return data?.times || 0;
+    } catch (err) {
+        console.error('获取统计数据时发生错误:', err);
+        return 0;
     }
-
-    return data?.times || 0;
-  } catch (err) {
-    console.error('获取统计数据时发生错误:', err);
-    return 0;
-  }
 }
 
 async function updateConversionStats() {
-  const count = await fetchConversionStats();
-  const countElement = document.getElementById('successCount');
-  if (countElement) {
-    countElement.textContent = count;
-  }
+    const count = await fetchConversionStats();
+    const countElement = document.getElementById('successCount');
+    if (countElement) {
+        countElement.textContent = count;
+    }
 }
