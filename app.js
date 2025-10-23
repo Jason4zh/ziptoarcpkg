@@ -112,18 +112,16 @@ function startBatchProcessing(files) {
     processNextFile(files, failedCount);
 }
 
-function processNextFile(files, failedCount) {
+async function processNextFile(files, failedCount) {
     if (completedBatchFiles + failedCount >= files.length) {
         isBatchProcessing = false;
         const successCount = totalBatchFiles - failedCount;
         addLog('success', `\n=== 批量处理结束！共处理 ${totalBatchFiles} 个文件，成功 ${successCount} 个，失败 ${failedCount} 个 ===`);
         return;
     }
-
     const fileIndex = completedBatchFiles + failedCount;
     const file = files[fileIndex];
     currentProcessingFile = file;
-
     (async () => {
         try {
             addLog('info', `\n--- 开始处理第 ${fileIndex + 1}/${totalBatchFiles} 个文件：${file.name} ---`);
@@ -132,6 +130,15 @@ function processNextFile(files, failedCount) {
             const batchPercent = Math.round(((completedBatchFiles + failedCount) / totalBatchFiles) * 100);
             updateProgress(batchPercent, `已完成 ${completedBatchFiles}/${totalBatchFiles} 个文件`);
         } catch (error) {
+            // 关键修改：若错误是“等待手动输入信息”，不增加失败计数，避免流程终止
+            if (error.message === '等待手动输入信息') {
+                addLog('info', `第 ${fileIndex + 1}/${totalBatchFiles} 个文件等待手动输入信息`);
+                // 保持进度，不标记失败
+                const batchPercent = Math.round(((completedBatchFiles + failedCount) / totalBatchFiles) * 100);
+                updateProgress(batchPercent, `等待手动输入（${completedBatchFiles + failedCount}/${totalBatchFiles}）`);
+                return; // 退出当前循环，等待用户输入后继续
+            }
+            // 其他错误正常计数失败
             failedCount++;
             const batchPercent = Math.round(((completedBatchFiles + failedCount) / totalBatchFiles) * 100);
             updateProgress(batchPercent, `处理失败（${completedBatchFiles + failedCount}/${totalBatchFiles}）`);
@@ -141,6 +148,7 @@ function processNextFile(files, failedCount) {
         processNextFile(files, failedCount);
     })();
 }
+
 
 function addLog(type, message) {
     const logsContainer = document.getElementById('logsContainer');
@@ -215,11 +223,9 @@ async function unzipSongPackage(zipFile) {
         const zip = await JSZip.loadAsync(zipFile);
         const files = {};
         let hasFoundFiles = false;
-
         for (const zipItem of Object.values(zip.files)) {
             if (zipItem.dir) continue;
             if (zipItem.name.includes('__MACOSX')) continue;
-
             const fileName = zipItem.name.split('/').pop();
             if (fileName) {
                 hasFoundFiles = true;
@@ -227,15 +233,11 @@ async function unzipSongPackage(zipFile) {
                 console.log(`找到文件: ${fileName}（路径：${zipItem.name}）`);
             }
         }
-
         const { required, optional } = SONG_FILE_CONFIG;
-
         console.log(required, optional);
+        // 关键修改：仅检查 base.jpg 和 base.ogg，不强制检查 slst.txt
         const missingRequiredFiles = required.filter(file => {
-            if (file === 'slst.txt') {
-                return !files[file] && !files['songlist.txt'];
-            }
-            return !files[file];
+            return file !== 'slst.txt' && !files[file]; 
         });
         if (missingRequiredFiles.length > 0) {
             throw new Error(`缺少必需的文件: ${missingRequiredFiles.join(', ')}`);
@@ -243,13 +245,13 @@ async function unzipSongPackage(zipFile) {
         if (!hasFoundFiles) {
             throw new Error('未找到任何有效的谱面文件');
         }
-
         return files;
     } catch (error) {
         console.error('解压ZIP文件失败:', error);
         throw error;
     }
 }
+
 
 async function createRootConfigFiles(files, songInfo) {
     updateProgress(isBatchProcessing ? null : 50, "生成配置文件...");
