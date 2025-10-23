@@ -486,7 +486,7 @@ async function getSongInfoFromFiles(files) {
         }
         const songInfo = {
             id: `manual_${Date.now()}`,
-            title: "手动配置歌曲",
+            title: currentProcessingFile.name.replace(/\.zip$/i, ''),
             artist: manualIllustrator || "未知艺术家",
             bpm: 120,
             difficulty: [],
