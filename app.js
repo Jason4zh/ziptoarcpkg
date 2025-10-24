@@ -29,6 +29,7 @@ let currentProcessingFile = null;
 let currentProcessingFiles = null;
 let isManualMode = false;
 let failedCount = 0;
+let manualBpm = 120;
 
 document.addEventListener('DOMContentLoaded', function () {
     updateCurrentTime();
@@ -84,18 +85,15 @@ function setupEventListeners() {
     continueBtn.addEventListener('click', function() {
         const illustrator = document.getElementById('illustratorInput').value.trim();
         const charter = document.getElementById('charterInput').value.trim();
-        
-        if (!illustrator || !charter) {
-            addLog('error', '请填写曲师和谱师信息');
-            return;
-        }
+        const bpm = parseInt(document.getElementById('bpmInput').value) || 120;
         
         manualIllustrator = illustrator;
         manualCharter = charter;
+        manualBpm = bpm;
         isManualMode = true;
         
         document.getElementById('inputSection').classList.add('hidden');
-        addLog('info', `已设置手动信息 - 曲师: ${illustrator}, 谱师: ${charter}`);
+        addLog('info', `已设置手动信息 - 曲师: ${illustrator}, 谱师: ${charter}，BPM: ${bpm}`);
         
         continueProcessing();
     });
@@ -349,21 +347,7 @@ async function createARCpkg(files, userId) {
     const zip = new JSZip();
     const packId = "base";
     const songId = songlistJson.songs[0]?.id || "song_" + Date.now();
-    addLog('info', `曲包ID: ${packId}, 歌曲ID: ${songId}`);
-    const packDir = zip.folder(packId);
-    const packYml = {
-        packName: `Pack ${packId}`,
-        imagePath: `1080_select_${packId}.png`,
-        levelIdentifiers: [`${userId}.${songId}`]
-    };
-    packDir.file(`${packId}.yml`, jsyaml.dump(packYml));
-    addLog('info', `创建曲包配置: ${packId}.yml`);
-    if (files['base.jpg']) {
-        packDir.file(`1080_select_${packId}.png`, files['base.jpg']);
-        addLog('info', '添加曲包封面: 1080_select_base.png');
-    } else {
-        addLog('warning', '未找到base.jpg，曲包将使用默认封面');
-    }
+    addLog('info', `歌曲ID: ${songId}`);
     const songDir = zip.folder(songId);
     const requiredSongFiles = [
         "base.jpg", "base.ogg", "project.arcproj"
@@ -384,13 +368,6 @@ async function createARCpkg(files, userId) {
     }
     addLog('info', `复制了 ${copiedFiles} 个文件到歌曲目录`);
     const indexYml = [
-        {
-            directory: packId,
-            identifier: `${userId}.${packId}`,
-            settingsFile: `${packId}.yml`,
-            version: 0,
-            type: "pack"
-        },
         {
             directory: songId,
             identifier: `${userId}.${songId}`,
@@ -488,7 +465,8 @@ async function getSongInfoFromFiles(files) {
             id: `manual_${Date.now()}`,
             title: currentProcessingFile.name.replace(/\.zip$/i, ''),
             artist: manualIllustrator || "未知艺术家",
-            bpm: 120,
+            bpm: manualBpm,
+            bpm_base: manualBpm,
             difficulty: [],
             jacket: 'base.jpg',
             audio: 'base.ogg',
