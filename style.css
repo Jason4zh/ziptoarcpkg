@@ -213,3 +213,22 @@ progress::-webkit-progress-value {
 .hidden {
     display: none !important;
 }
+
+.continue-btn {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    border: none;
+    padding: 12px 30px;
+    border-radius: 25px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.continue-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+}
+.continue-btn:disabled {
+    background: #bdc3c7;
+    cursor: not-allowed;
+    transform: no

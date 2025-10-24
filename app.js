@@ -137,6 +137,7 @@ function setupEventListeners() {
     // 跳过背景添加
     skipBackgroundBtn.addEventListener('click', function () {
         backgroundFileName = '';
+        currentProcessingFile = null;
         document.getElementById('backgroundInputSection').classList.add('hidden');
         document.getElementById('progressSection').classList.remove('hidden');
         continueProcessing();
