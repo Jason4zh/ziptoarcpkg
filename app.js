@@ -29,7 +29,7 @@ let currentProcessingFile = null;
 let currentProcessingFiles = null;
 let isManualMode = false;
 let failedCount = 0;
-let manualBpm = 120;
+let manualBpm = 200;
 // 新增：背景图片相关全局变量
 let backgroundFileName = '';
 let currentExtractedFiles = null;
@@ -84,19 +84,19 @@ function setupEventListeners() {
         }
     });
 
-    continueBtn.addEventListener('click', function() {
+    continueBtn.addEventListener('click', function () {
         const illustrator = document.getElementById('illustratorInput').value.trim();
         const charter = document.getElementById('charterInput').value.trim();
-        const bpm = parseInt(document.getElementById('bpmInput').value) || 120;
-        
+        const bpm = parseInt(document.getElementById('bpmInput').value) || 200;
+
         manualIllustrator = illustrator;
         manualCharter = charter;
         manualBpm = bpm;
         isManualMode = true;
-        
+
         document.getElementById('inputSection').classList.add('hidden');
         addLog('info', `已设置手动信息 - 曲师: ${illustrator}, 谱师: ${charter}，BPM: ${bpm}`);
-        
+
         continueProcessing();
     });
 
@@ -134,10 +134,12 @@ function setupEventListeners() {
         }
     });
 
-    // 跳过背景添加
+    // 跳过背景添加 - 修改事件处理逻辑
     skipBackgroundBtn.addEventListener('click', function () {
-        backgroundFileName = '';
-        currentProcessingFile = null;
+        if (backgroundFileName !== 'SKIPPED') {
+            backgroundFileName = 'SKIPPED'; // 标记为已跳过
+            addLog('info', '已跳过背景图片上传');
+        }
         document.getElementById('backgroundInputSection').classList.add('hidden');
         document.getElementById('progressSection').classList.remove('hidden');
         continueProcessing();
@@ -149,21 +151,35 @@ async function handleBackgroundFileUpload(file) {
     try {
         const fileData = await readFileAsArrayBuffer(file);
         backgroundFileName = file.name;
-        currentExtractedFiles[backgroundFileName] = fileData;
+        if (currentExtractedFiles) {
+            currentExtractedFiles[backgroundFileName] = fileData;
+        }
         addLog('info', `已选择背景图片：${backgroundFileName}`);
         document.getElementById('backgroundInputSection').classList.add('hidden');
-        document.getElementById('progressSection').classList.remove('hidden');
         continueProcessing();
     } catch (error) {
         addLog('error', `背景图片上传失败：${error.message}`);
     }
 }
 
-// 新增：显示背景图片输入区域
+
 function showBackgroundInputSection() {
+    // 添加状态检查，避免重复显示
+    if (backgroundFileName === 'SKIPPED') {
+        addLog('info', '背景图片已跳过，不再显示输入区域');
+        return;
+    }
     document.getElementById('backgroundInputSection').classList.remove('hidden');
     document.getElementById('progressSection').classList.add('hidden');
     document.getElementById('inputSection').classList.add('hidden');
+    isManualMode = false; // 确保手动模式关闭
+}
+
+// 修改：显示手动输入区域
+function showManualInputSection() {
+    document.getElementById('inputSection').classList.remove('hidden');
+    document.getElementById('progressSection').classList.add('hidden');
+    document.getElementById('backgroundInputSection').classList.add('hidden');
 }
 
 function startBatchProcessing(files) {
@@ -172,6 +188,7 @@ function startBatchProcessing(files) {
     completedBatchFiles = 0;
     failedCount = 0;
     currentProcessingFiles = files;
+    backgroundFileName = ''; // 重置背景图片状态
     addLog('info', `=== 开始批量处理，共 ${totalBatchFiles} 个ZIP文件 ===`);
     document.getElementById('progressSection').classList.remove('hidden');
     updateProgress(0, `等待处理（0/${totalBatchFiles}）`);
@@ -188,6 +205,9 @@ function processNextFile(files) {
     const fileIndex = completedBatchFiles + failedCount;
     const file = files[fileIndex];
     currentProcessingFile = file;
+    backgroundFileName = '';
+    currentExtractedFiles = null;
+    isManualMode = false;
     (async () => {
         try {
             addLog('info', `\n--- 开始处理第 ${fileIndex + 1}/${totalBatchFiles} 个文件：${file.name} ---`);
@@ -305,6 +325,7 @@ async function unzipSongPackage(zipFile) {
         }
         // 新增：检测含Background的JPG文件
         const backgroundFiles = Object.keys(files).filter(f => f.includes('Background') && f.endsWith('.jpg'));
+        
         if (backgroundFiles.length > 0) {
             backgroundFileName = backgroundFiles[0];
             addLog('info', `检测到背景图片：${backgroundFileName}`);
@@ -478,7 +499,8 @@ async function createARCpkg(files, userId) {
     return arcpkgBlob;
 }
 
-async function processZipFile(file, userId = "default_user") {
+// 修改：处理ZIP文件逻辑，确保跳过背景图片后不再触发检查
+async function processZipFile(file, userId = "default_user", tempBackgroundFileName = backgroundFileName) {
     const MAX_FILE_SIZE = 50 * 1024 * 1024;
     if (file.size > MAX_FILE_SIZE) {
         throw new Error(`文件过大（${(file.size / 1024 / 1024).toFixed(2)}MB），最大支持50MB`);
@@ -491,12 +513,17 @@ async function processZipFile(file, userId = "default_user") {
     console.log('规范化后的文件列表:', Object.keys(extractedFiles));
     addLog('info', `ZIP文件解析完成，共识别 ${Object.keys(extractedFiles).length} 个有效文件`);
     
-    // 新增：未检测到背景文件时暂停处理
-    if (!backgroundFileName) {
+    // 检查背景图片 - 只有在不是手动模式时才检查
+    if (!isManualMode && !tempBackgroundFileName) {
         showBackgroundInputSection();
         throw new Error('等待背景图片输入');
+    } else if (tempBackgroundFileName === 'SKIPPED') {
+        addLog('info', '背景图片已跳过，继续处理文件');
+    } else if (tempBackgroundFileName) {
+        addLog('info', `使用背景图片：${tempBackgroundFileName}`);
     }
-    
+
+    // 检查歌曲配置文件
     const songInfo = await getSongInfoFromFiles(extractedFiles);
     await createRootConfigFiles(extractedFiles, songInfo, userId);
     await generateProjectFile(extractedFiles, songInfo, userId);
@@ -504,10 +531,11 @@ async function processZipFile(file, userId = "default_user") {
     const safeTitle = songInfo.title.replace(/[^\w\-]/g, '_');
     const fileName = `${safeTitle}.arcpkg`;
     const downloadUrl = URL.createObjectURL(arcpkgBlob);
+
     try {
         const { data, error } = await supabase
             .from('times')
-            .update({ times: parseInt(document.getElementById('successCount').textContent) + 1})
+            .update({ times: parseInt(document.getElementById('successCount').textContent) + 1 })
             .eq('id', 1);
         if (error) {
             console.error('更新次数失败:', error);
@@ -518,6 +546,7 @@ async function processZipFile(file, userId = "default_user") {
     } catch (err) {
         console.error('Supabase操作异常:', err);
     }
+
     showSuccess(
         `歌曲《${songInfo.title}》打包完成`,
         downloadUrl,
@@ -553,7 +582,7 @@ async function getSongInfoFromFiles(files) {
     updateProgress(isBatchProcessing ? null : 30, "解析歌曲配置...");
     addLog('info', '开始解析歌曲配置...');
     if (isManualMode) {
-        addLog('info', '已进入手动模式，使用默认歌曲配置');
+        addLog('info', '已进入手动模式，使用手动输入信息');
         const affFiles = Object.keys(files).filter(name => name.endsWith('.aff'));
         if (affFiles.length === 0) {
             throw new Error("未找到任何 .aff 谱面文件");
@@ -633,7 +662,7 @@ async function getSongInfoFromFiles(files) {
             id: songData.id || `unknown_${Date.now()}`,
             title: songData.title_localized?.en || songData.title || "未知歌曲",
             artist: songData.artist || "未知艺术家",
-            bpm: songData.bpm_base || parseInt(songData.bpm) || 120,
+            bpm: songData.bpm_base || parseInt(songData.bpm) || 200,
             difficulty: [],
             jacket: 'base.jpg',
             audio: 'base.ogg',
@@ -682,25 +711,62 @@ async function getSongInfoFromFiles(files) {
     }
 }
 
-function showManualInputSection() {
-    document.getElementById('inputSection').classList.remove('hidden');
-    document.getElementById('progressSection').classList.add('hidden');
-    manualIllustrator = "";
-    manualCharter = "";
-}
-
 function continueProcessing() {
+    // 隐藏所有输入区域
+    document.getElementById('inputSection').classList.add('hidden');
+    document.getElementById('backgroundInputSection').classList.add('hidden');
+    
+    // 显示进度区域
     document.getElementById('progressSection').classList.remove('hidden');
+    
     const userId = window.currentUserId || "default_user";
+    
+    // 添加状态验证，避免重复处理
     if (currentProcessingFile) {
-        processZipFile(currentProcessingFile, userId)
-            .catch(err => {
-                if (err.message !== '等待手动输入信息' && err.message !== '等待背景图片输入') {
-                    addLog('error', `继续处理失败：${err.message}`);
+        // 如果已经手动输入过信息，直接继续处理，不再检查背景
+        if (isManualMode) {
+            const tempBackgroundFileName = backgroundFileName || 'SKIPPED';
+            backgroundFileName = '';
+            processZipFile(currentProcessingFile, userId, tempBackgroundFileName)
+                .catch(err => {
+                    if (err.message !== '等待手动输入信息' && err.message !== '等待背景图片输入') {
+                        addLog('error', `继续处理失败：${err.message}`);
+                    }
+                });
+        } else {
+            // 检查是否已经处理过背景图片或已跳过
+            console.log('继续处理时的背景文件名状态:', backgroundFileName);
+            if (backgroundFileName === 'SKIPPED' || (backgroundFileName && currentExtractedFiles && currentExtractedFiles[backgroundFileName])) {
+                // 重置背景文件名以避免在下一个文件中使用错误状态
+                const tempBackgroundFileName = backgroundFileName;
+                backgroundFileName = '';
+                processZipFile(currentProcessingFile, userId, tempBackgroundFileName)
+                    .catch(err => {
+                        if (err.message !== '等待手动输入信息' && err.message !== '等待背景图片输入') {
+                            addLog('error', `继续处理失败：${err.message}`);
+                        }
+                    });
+            } else {
+                // 如果还没有处理背景图片，检查是否需要显示背景输入区域
+                const hasBackgroundFiles = Object.keys(currentExtractedFiles || {}).some(f => f.includes('Background') && f.endsWith('.jpg'));
+                if (hasBackgroundFiles) {
+                    // 如果有背景文件，自动使用第一个
+                    const bgFiles = Object.keys(currentExtractedFiles).filter(f => f.includes('Background') && f.endsWith('.jpg'));
+                    backgroundFileName = bgFiles[0];
+                    addLog('info', `自动使用检测到的背景图片：${backgroundFileName}`);
+                    const tempBackgroundFileName = backgroundFileName;
+                    backgroundFileName = '';
+                    processZipFile(currentProcessingFile, userId, tempBackgroundFileName);
+                } else {
+                    // 显示背景输入区域
+                    showBackgroundInputSection();
                 }
-            });
+            }
+        }
     } else if (currentProcessingFiles) {
         startBatchProcessing(currentProcessingFiles);
+    } else {
+        addLog('warning', '没有待处理的文件');
     }
 }
 

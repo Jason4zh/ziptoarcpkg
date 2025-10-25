@@ -38,7 +38,7 @@
             </div>
             <div class="input-group">
                 <label for="bpmInput">BPM</label>
-                <input type="number" id="bpmInput" placeholder="请输入BPM值" min="1" step="1" value="120">
+                <input type="number" id="bpmInput" placeholder="请输入BPM值" min="1" step="1" value="200">
             </div>
             <button class="continue-btn" id="continueBtn">继续处理</button>
         </div>
@@ -46,13 +46,13 @@
         <!-- 新增：背景图片输入区域（初始隐藏） -->
         <div class="input-section hidden" id="backgroundInputSection">
             <div class="upload-area" id="backgroundUploadArea">
-                <div class="upload-icon">🖼️</div>
-                <p class="upload-text">未检测到Background图片，拖拽JPG文件到这里，或点击选择文件</p>
-                <p class="upload-hint">支持名称包含"Background"的JPG文件，将用于歌曲背景</p>
+                <div class="upload-icon">📁</div>
+                <p class="upload-text">未检测到Background图片，拖拽背景到这里，或点击选择文件</p>
+                <p class="upload-hint">支持JPG文件，将用于歌曲背景</p>
                 <input type="file" id="backgroundFileInput" accept=".jpg" style="display: none;">
                 <button class="upload-btn" onclick="document.getElementById('backgroundFileInput').click()">选择背景图片</button>
             </div>
-            <button class="continue-btn" id="skipBackgroundBtn" style="margin-top: 20px;">跳过添加背景</button>
+            <button class="continue-btn" id="skipBackgroundBtn" style="margin-top: 20px; text-align: center;">跳过</button>
         </div>
 
         <!-- 整体进度条（无单个文件进度条） -->
