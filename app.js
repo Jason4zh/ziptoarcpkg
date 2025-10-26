@@ -466,9 +466,8 @@ async function createARCpkg(files, userId) {
     if (backgroundFileName && backgroundFileName !== 'SKIPPED' && files[backgroundFileName]) {
         requiredSongFiles.push(backgroundFileName);
         addLog('info', `添加背景文件到打包列表: ${backgroundFileName}`);
-    } else if (backgroundFileName && backgroundFileName !== 'SKIPPED') {
-        addLog('warning', `背景文件 ${backgroundFileName} 在文件列表中不存在`);
-    }
+    } 
+    
     
     const affFiles = Object.keys(files).filter(name => name.endsWith('.aff'));
     requiredSongFiles.push(...affFiles);
@@ -740,7 +739,7 @@ function continueProcessing() {
         if (isManualMode) {
             const tempBackgroundFileName = backgroundFileName || 'SKIPPED';
             backgroundFileName = '';
-            processZipFile(currentProcessingFile, userId, tempBackgroundFileName)
+            processZipFile(currentProcessingFile, userId, backgroundFileName)
                 .catch(err => {
                     if (err.message !== '等待手动输入信息' && err.message !== '等待背景图片输入') {
                         addLog('error', `继续处理失败：${err.message}`);
