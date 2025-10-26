@@ -146,14 +146,23 @@ function setupEventListeners() {
     });
 }
 
-// 新增：处理背景图片上传
 async function handleBackgroundFileUpload(file) {
     try {
         const fileData = await readFileAsArrayBuffer(file);
         backgroundFileName = file.name;
+        
+        // 关键修复：确保背景文件被添加到当前处理的文件列表中
         if (currentExtractedFiles) {
             currentExtractedFiles[backgroundFileName] = fileData;
+            console.log('背景文件已添加到文件列表:', backgroundFileName);
+            console.log('当前文件列表:', Object.keys(currentExtractedFiles));
+        } else {
+            // 如果currentExtractedFiles为空，重新创建它
+            currentExtractedFiles = {};
+            currentExtractedFiles[backgroundFileName] = fileData;
+            console.log('重新创建文件列表并添加背景:', backgroundFileName);
         }
+        
         addLog('info', `已选择背景图片：${backgroundFileName}`);
         document.getElementById('backgroundInputSection').classList.add('hidden');
         continueProcessing();
