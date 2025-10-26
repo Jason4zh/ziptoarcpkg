@@ -417,12 +417,15 @@ async function generateProjectFile(files, songInfo, userId) {
         const difficultyText = chart.rating !== -1
             ? `${difficultyName} ${chart.rating}${chart.ratingPlus ? '+' : ''}`
             : difficultyName;
+        
+        // 修复2：正确设置backgroundPath字段
+        const bgPath = backgroundFileName && backgroundFileName !== 'SKIPPED' ? backgroundFileName : '';
         res.charts.push({
             chartPath: chartFile,
             audioPath: "base.ogg",
             jacketPath: "base.jpg",
-            // 新增：背景图片路径配置
-            backgroundPath: backgroundFileName || '',
+            // 修复：正确使用背景图片文件名
+            backgroundPath: bgPath,
             baseBpm: song.bpm_base,
             bpmText: song.bpm,
             syncBaseBpm: true,
@@ -435,7 +438,7 @@ async function generateProjectFile(files, songInfo, userId) {
             previewEnd: song.audioPreviewEnd || 50400
         });
         validCharts++;
-        addLog('info', `添加难度: ${difficultyText} (谱师: ${charterName})`);
+        addLog('info', `添加难度: ${difficultyText} (谱师: ${charterName}, 背景: ${bgPath || '无'})`);
     }
     if (res.charts.length > 0) {
         const yamlData = jsyaml.dump(res, { encoding: "utf-8" });
@@ -445,7 +448,6 @@ async function generateProjectFile(files, songInfo, userId) {
         throw new Error('未生成project.arcproj：无有效难度');
     }
 }
-
 async function createARCpkg(files, userId) {
     updateProgress(isBatchProcessing ? null : 90, "创建ARCpkg包...");
     addLog('info', '开始创建ARCpkg包...');
@@ -457,10 +459,15 @@ async function createARCpkg(files, userId) {
     const requiredSongFiles = [
         "base.jpg", "base.ogg", "project.arcproj"
     ];
-    // 新增：添加背景文件到打包列表
-    if (backgroundFileName && files[backgroundFileName]) {
+    
+    // 修复1：正确添加背景文件到打包列表
+    if (backgroundFileName && backgroundFileName !== 'SKIPPED' && files[backgroundFileName]) {
         requiredSongFiles.push(backgroundFileName);
+        addLog('info', `添加背景文件到打包列表: ${backgroundFileName}`);
+    } else if (backgroundFileName && backgroundFileName !== 'SKIPPED') {
+        addLog('warning', `背景文件 ${backgroundFileName} 在文件列表中不存在`);
     }
+    
     const affFiles = Object.keys(files).filter(name => name.endsWith('.aff'));
     requiredSongFiles.push(...affFiles);
     let copiedFiles = 0;
@@ -471,7 +478,7 @@ async function createARCpkg(files, userId) {
             addLog('debug', `复制文件到歌曲目录: ${file}`);
         } else if (file.endsWith('.aff')) {
             addLog('debug', `跳过缺失的谱面文件: ${file}`);
-        } else if (file === backgroundFileName) {
+        } else if (file === backgroundFileName && backgroundFileName !== 'SKIPPED') {
             addLog('debug', `跳过缺失的背景文件: ${file}`);
         } else {
             addLog('warning', `缺失文件: ${file}`);
@@ -498,7 +505,6 @@ async function createARCpkg(files, userId) {
     addLog('success', `ARCpkg创建完成，大小: ${(arcpkgBlob.size / 1024 / 1024).toFixed(2)}MB`);
     return arcpkgBlob;
 }
-
 // 修改：处理ZIP文件逻辑，确保跳过背景图片后不再触发检查
 async function processZipFile(file, userId = "default_user", tempBackgroundFileName = backgroundFileName) {
     const MAX_FILE_SIZE = 50 * 1024 * 1024;
@@ -513,14 +519,20 @@ async function processZipFile(file, userId = "default_user", tempBackgroundFileN
     console.log('规范化后的文件列表:', Object.keys(extractedFiles));
     addLog('info', `ZIP文件解析完成，共识别 ${Object.keys(extractedFiles).length} 个有效文件`);
     
-    // 检查背景图片 - 只有在不是手动模式时才检查
-    if (!isManualMode && !tempBackgroundFileName) {
+    // 修复：确保背景文件状态正确传递
+    if (tempBackgroundFileName && tempBackgroundFileName !== 'SKIPPED') {
+        backgroundFileName = tempBackgroundFileName;
+        addLog('info', `使用传递的背景图片：${backgroundFileName}`);
+    }
+    
+    // 检查背景图片 - 只有在不是手动模式且没有背景图片时才检查
+    if (!isManualMode && !backgroundFileName) {
         showBackgroundInputSection();
         throw new Error('等待背景图片输入');
-    } else if (tempBackgroundFileName === 'SKIPPED') {
+    } else if (backgroundFileName === 'SKIPPED') {
         addLog('info', '背景图片已跳过，继续处理文件');
-    } else if (tempBackgroundFileName) {
-        addLog('info', `使用背景图片：${tempBackgroundFileName}`);
+    } else if (backgroundFileName) {
+        addLog('info', `使用背景图片：${backgroundFileName}`);
     }
 
     // 检查歌曲配置文件
@@ -555,7 +567,6 @@ async function processZipFile(file, userId = "default_user", tempBackgroundFileN
     );
     setTimeout(() => URL.revokeObjectURL(downloadUrl), 60000);
 }
-
 function normalizeExtractedFiles(zipEntries) {
     const normalized = {};
     const IGNORED_FOLDERS = ['__MACOSX/', '.DS_Store'];
