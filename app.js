@@ -513,21 +513,23 @@ async function processZipFile(file, userId = "default_user", tempBackgroundFileN
     if (file.size > MAX_FILE_SIZE) {
         throw new Error(`文件过大（${(file.size / 1024 / 1024).toFixed(2)}MB），最大支持50MB`);
     }
-    updateProgress(isBatchProcessing ? null : 5, "读取ZIP文件...");
-    const zipBuffer = await readFileAsArrayBuffer(file);
-    const rawExtractedFiles = await unzipSongPackage(zipBuffer);
-    const extractedFiles = normalizeExtractedFiles(rawExtractedFiles);
-    currentExtractedFiles = extractedFiles; // 存储解压文件供背景上传使用
-    console.log('规范化后的文件列表:', Object.keys(extractedFiles));
-    addLog('info', `ZIP文件解析完成，共识别 ${Object.keys(extractedFiles).length} 个有效文件`);
     
-    // 修复：确保背景文件状态正确传递
-    if (tempBackgroundFileName && tempBackgroundFileName !== 'SKIPPED') {
-        backgroundFileName = tempBackgroundFileName;
-        addLog('info', `使用传递的背景图片：${backgroundFileName}`);
+    // 只在第一次处理时解压ZIP文件
+    if (!currentExtractedFiles) {
+        updateProgress(isBatchProcessing ? null : 5, "读取ZIP文件...");
+        const zipBuffer = await readFileAsArrayBuffer(file);
+        const rawExtractedFiles = await unzipSongPackage(zipBuffer);
+        currentExtractedFiles = normalizeExtractedFiles(rawExtractedFiles);
+        console.log('规范化后的文件列表:', Object.keys(currentExtractedFiles));
+        addLog('info', `ZIP文件解析完成，共识别 ${Object.keys(currentExtractedFiles).length} 个有效文件`);
     }
     
-    // 检查背景图片 - 只有在不是手动模式且没有背景图片时才检查
+    // 确保背景文件状态正确传递
+    if (tempBackgroundFileName && tempBackgroundFileName !== 'SKIPPED') {
+        backgroundFileName = tempBackgroundFileName;
+    }
+    
+    // 检查背景图片
     if (!isManualMode && !backgroundFileName) {
         showBackgroundInputSection();
         throw new Error('等待背景图片输入');
@@ -538,23 +540,21 @@ async function processZipFile(file, userId = "default_user", tempBackgroundFileN
     }
 
     // 检查歌曲配置文件
-    const songInfo = await getSongInfoFromFiles(extractedFiles);
-    await createRootConfigFiles(extractedFiles, songInfo, userId);
-    await generateProjectFile(extractedFiles, songInfo, userId);
-    const arcpkgBlob = await createARCpkg(extractedFiles, userId);
+    const songInfo = await getSongInfoFromFiles(currentExtractedFiles);
+    await createRootConfigFiles(currentExtractedFiles, songInfo, userId);
+    await generateProjectFile(currentExtractedFiles, songInfo, userId);
+    const arcpkgBlob = await createARCpkg(currentExtractedFiles, userId);
     const safeTitle = songInfo.title.replace(/[^\w\-]/g, '_');
     const fileName = `${safeTitle}.arcpkg`;
     const downloadUrl = URL.createObjectURL(arcpkgBlob);
 
+    // 更新成功计数
     try {
         const { data, error } = await supabase
             .from('times')
             .update({ times: parseInt(document.getElementById('successCount').textContent) + 1 })
             .eq('id', 1);
-        if (error) {
-            console.error('更新次数失败:', error);
-        } else {
-            console.log('上传次数已更新');
+        if (!error) {
             updateConversionStats();
         }
     } catch (err) {
