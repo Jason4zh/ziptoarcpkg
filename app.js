@@ -33,6 +33,7 @@ let manualBpm = 200;
 // 新增：背景图片相关全局变量
 let backgroundFileName = '';
 let currentExtractedFiles = null;
+let manualDifficulty='';
 
 document.addEventListener('DOMContentLoaded', function () {
     updateCurrentTime();
@@ -88,10 +89,12 @@ function setupEventListeners() {
         const illustrator = document.getElementById('illustratorInput').value.trim();
         const charter = document.getElementById('charterInput').value.trim();
         const bpm = parseInt(document.getElementById('bpmInput').value) || 200;
+        const difficulty = document.getElementById('difficultyInput').value.trim();
 
         manualIllustrator = illustrator;
         manualCharter = charter;
         manualBpm = bpm;
+        manualDifficulty = difficulty;
         isManualMode = true;
 
         document.getElementById('inputSection').classList.add('hidden');
@@ -210,6 +213,7 @@ function processNextFile(files) {
     backgroundFileName = '';
     currentExtractedFiles = null;
     isManualMode = false;
+    manualDifficulty = '';
     (async () => {
         try {
             addLog('info', `\n--- 开始处理第 ${fileIndex + 1}/${totalBatchFiles} 个文件：${file.name} ---`);
@@ -416,9 +420,9 @@ async function generateProjectFile(files, songInfo, userId) {
         const charterName = manualCharter || chart.chartDesigner || userId;
         const artistName = manualIllustrator || songInfo.artist || "Unknown Artist";
         const diffColors = ['#3A6B78FF', '#566947FF', '#482B54FF', '#7C1C30FF', '#433455FF'];
-        const difficultyText = chart.rating !== -1
-            ? `${difficultyName} ${chart.rating}${chart.ratingPlus ? '+' : ''}`
-            : difficultyName;
+        const difficultyText = chart.rating !== -1 && chart.rating !== ""
+    ? `${difficultyName} ${chart.rating}${chart.ratingPlus ? '+' : ''}`
+    : difficultyName;
         
         // 修复2：正确设置backgroundPath字段
         const bgPath = backgroundFileName && backgroundFileName !== 'SKIPPED' ? backgroundFileName : '';
@@ -594,51 +598,57 @@ async function getSongInfoFromFiles(files) {
     updateProgress(isBatchProcessing ? null : 30, "解析歌曲配置...");
     addLog('info', '开始解析歌曲配置...');
     if (isManualMode) {
-        addLog('info', '已进入手动模式，使用手动输入信息');
-        const affFiles = Object.keys(files).filter(name => name.endsWith('.aff'));
-        if (affFiles.length === 0) {
-            throw new Error("未找到任何 .aff 谱面文件");
-        }
-        const songInfo = {
-            id: `manual_${Date.now()}`,
-            title: currentProcessingFile.name.replace(/\.zip$/i, ''),
-            artist: manualIllustrator || "未知艺术家",
-            bpm: manualBpm,
-            bpm_base: manualBpm,
-            difficulty: [],
-            jacket: 'base.jpg',
-            audio: 'base.ogg',
-            side: 1,
-            bg: "default",
-            version: "1.0.0"
-        };
-        const diffFileMap = {};
-        affFiles.forEach(affFile => {
-            const numPrefix = affFile.match(/^(\d+)\./);
-            if (numPrefix) {
-                const ratingClass = parseInt(numPrefix[1]);
-                diffFileMap[ratingClass] = affFile;
-                addLog('info', `匹配谱面: ${DIFF_MAPPING[ratingClass] || `等级${ratingClass}`} -> ${affFile}`);
-            } else {
-                addLog('warning', `未识别的谱面文件命名: ${affFile}`);
-            }
-        });
-        for (const [ratingClass, affFile] of Object.entries(diffFileMap)) {
-            songInfo.difficulty.push({
-                level: parseInt(ratingClass),
-                name: DIFF_MAPPING[ratingClass] || `难度${ratingClass}`,
-                file: affFile,
-                chartDesigner: manualCharter || "未知谱师",
-                rating: -1
-            });
-        }
-        if (songInfo.difficulty.length === 0) {
-            throw new Error("未匹配到任何有效谱面");
-        }
-        currentSongTitle = songInfo.title;
-        addLog('success', `手动模式歌曲信息生成完成: ${songInfo.title}（${songInfo.difficulty.length}个难度）`);
-        return songInfo;
+    addLog('info', '已进入手动模式，使用手动输入信息');
+    const affFiles = Object.keys(files).filter(name => name.endsWith('.aff'));
+    if (affFiles.length === 0) {
+        throw new Error("未找到任何 .aff 谱面文件");
     }
+    
+    const songInfo = {
+        id: `manual_${Date.now()}`,
+        title: currentProcessingFile.name.replace(/\.zip$/i, ''),
+        artist: manualIllustrator || "未知艺术家",
+        bpm: manualBpm,
+        bpm_base: manualBpm,
+        difficulty: [],
+        jacket: 'base.jpg',
+        audio: 'base.ogg',
+        side: 1,
+        bg: "default",
+        version: "1.0.0"
+    };
+    
+    const diffFileMap = {};
+    affFiles.forEach(affFile => {
+        const numPrefix = affFile.match(/^(\d+)\./);
+        if (numPrefix) {
+            const ratingClass = parseInt(numPrefix[1]);
+            diffFileMap[ratingClass] = affFile;
+            addLog('info', `匹配谱面: ${DIFF_MAPPING[ratingClass] || `等级${ratingClass}`} -> ${affFile}`);
+        } else {
+            addLog('warning', `未识别的谱面文件命名: ${affFile}`);
+        }
+    });
+    
+    for (const [ratingClass, affFile] of Object.entries(diffFileMap)) {
+        // 修改：使用手动输入的难度等级，而不是-1
+        songInfo.difficulty.push({
+            level: parseInt(ratingClass),
+            name: DIFF_MAPPING[ratingClass] || `难度${ratingClass}`,
+            file: affFile,
+            chartDesigner: manualCharter || "未知谱师",
+            rating: manualDifficulty || -1  // 使用手动输入的难度等级
+        });
+    }
+    
+    if (songInfo.difficulty.length === 0) {
+        throw new Error("未匹配到任何有效谱面");
+    }
+    
+    currentSongTitle = songInfo.title;
+    addLog('success', `手动模式歌曲信息生成完成: ${songInfo.title}（${songInfo.difficulty.length}个难度）`);
+    return songInfo;
+}
     let songConfigFile = null;
     if (files['slst.txt']) {
         songConfigFile = 'slst.txt';
