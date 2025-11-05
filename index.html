@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,6 +10,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
 </head>
+
 <body>
     <div class="container">
         <header>
@@ -25,12 +27,12 @@
                 <button class="upload-btn" onclick="document.getElementById('fileInput').click()">选择文件</button>
             </div>
         </div>
-        
+
         <!-- 手动输入区域 -->
         <div class="input-section hidden" id="inputSection">
             <div class="input-group">
-                <label for="illustratorInput">曲师 Illustration</label>
-                <input type="text" id="illustratorInput" placeholder="请输入曲师名称">
+                <label for="illustratorInput">曲绘 Illustration</label>
+                <input type="text" id="illustratorInput" placeholder="请输入曲绘作者名称">
             </div>
             <div class="input-group">
                 <label for="charterInput">谱师 Chart</label>
@@ -40,10 +42,19 @@
                 <label for="bpmInput">BPM</label>
                 <input type="number" id="bpmInput" placeholder="请输入BPM值" min="1" step="1" value="200">
             </div>
-<div class="input-group">
-    <label for="difficultyInput">难度等级</label>
-    <input type="text" id="difficultyInput" placeholder="请输入难度等级，如：11">
-</div>
+            <div class="input-group">
+                <label for="difficultyInput">难度</label>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <select id="difficultySelect" aria-label="难度名称">
+                        <option value="Past">Past</option>
+                        <option value="Present">Present</option>
+                        <option value="Future">Future</option>
+                        <option value="Beyond">Beyond</option>
+                        <option value="Eternal">Eternal</option>
+                    </select>
+                    <input type="number" id="difficultyInput" placeholder="等级（数字）" min="-1" step="1" style="width:100px;" />
+                </div>
+            </div>
             <button class="continue-btn" id="continueBtn">继续处理</button>
         </div>
 
@@ -54,9 +65,11 @@
                 <p class="upload-text">未检测到Background图片，拖拽背景到这里，或点击选择文件</p>
                 <p class="upload-hint">支持JPG文件，将用于歌曲背景</p>
                 <input type="file" id="backgroundFileInput" accept=".jpg" style="display: none;">
-                <button class="upload-btn" onclick="document.getElementById('backgroundFileInput').click()">选择背景图片</button>
+                <button class="upload-btn"
+                    onclick="document.getElementById('backgroundFileInput').click()">选择背景图片</button>
             </div>
-            <button class="continue-btn" id="skipBackgroundBtn" style="margin-top: 20px; text-align: center;">跳过</button>
+            <button class="continue-btn" id="skipBackgroundBtn"
+                style="margin-top: 20px; text-align: center;">跳过</button>
         </div>
 
         <!-- 整体进度条（无单个文件进度条） -->
@@ -97,8 +110,9 @@
     <div id="conversionStats" style="margin-top: 20px; text-align: center; color: white;">
         目前已成功转换 <span id="successCount">0</span> 份文件
     </div>
-    
+
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="app.js"></script>
 </body>
+
 </html>
