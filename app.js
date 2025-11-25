@@ -11,7 +11,8 @@ const SONG_FILE_CONFIG = {
         "slst.txt"
     ],
     optional: [
-        "songlist.txt"
+        "songlist.txt",
+        "base.mp3"
     ]
 };
 const SUPABASE_URL = 'https://hwlzunfsvcjxtjdeiuns.supabase.co';
@@ -33,7 +34,7 @@ let manualBpm = 200;
 // 新增：背景图片相关全局变量
 let backgroundFileName = '';
 let currentExtractedFiles = null;
-let manualDifficulty='';
+let manualDifficulty = '';
 let manualDifficultyName = ''; // 手动选择的难度名称（Past/Present/…）
 
 document.addEventListener('DOMContentLoaded', function () {
@@ -56,8 +57,6 @@ function setupEventListeners() {
     const fileInput = document.getElementById('fileInput');
     const uploadArea = document.getElementById('uploadArea');
     const continueBtn = document.getElementById('continueBtn');
-
-    // 原文件上传逻辑
     fileInput.addEventListener('change', function (e) {
         if (e.target.files.length > 0) {
             const selectedFiles = Array.from(e.target.files);
@@ -160,12 +159,12 @@ async function handleBackgroundFileUpload(file) {
     try {
         const fileData = await readFileAsArrayBuffer(file);
         backgroundFileName = file.name;
-        
+
         // 关键修复：确保背景文件被添加到当前处理的文件列表中
         if (currentExtractedFiles) {
             currentExtractedFiles[backgroundFileName] = fileData;
         }
-        
+
         document.getElementById('backgroundInputSection').classList.add('hidden');
         continueProcessing();
     } catch (error) {
@@ -325,19 +324,27 @@ async function unzipSongPackage(zipFile) {
                 console.log(`找到文件: ${fileName}（路径：${zipItem.name}）`);
             }
         }
+
         const { required } = SONG_FILE_CONFIG;
         const missingRequiredFiles = required.filter(file => {
             return file !== 'slst.txt' && !files[file];
         });
+
+        // 修改：允许 base.mp3 替代 base.ogg
+        if (!files['base.ogg'] && !files['base.mp3']) {
+            missingRequiredFiles.push('base.ogg 或 base.mp3');
+        }
+
         if (missingRequiredFiles.length > 0) {
             throw new Error(`缺少必需的文件: ${missingRequiredFiles.join(', ')}`);
         }
+
         if (!hasFoundFiles) {
             throw new Error('未找到任何有效的谱面文件');
         }
-        // 新增：检测含Background的JPG文件
+
+        // 背景图片检测
         const backgroundFiles = Object.keys(files).filter(f => f.includes('Background') && f.endsWith('.jpg'));
-        
         if (backgroundFiles.length > 0) {
             backgroundFileName = backgroundFiles[0];
             addLog('info', `检测到背景图片：${backgroundFileName}`);
@@ -345,6 +352,7 @@ async function unzipSongPackage(zipFile) {
             backgroundFileName = '';
             addLog('warning', '未检测到含Background的JPG文件');
         }
+
         return files;
     } catch (error) {
         console.error('解压ZIP文件失败:', error);
@@ -393,57 +401,87 @@ async function createRootConfigFiles(files, songInfo, userId) {
 async function generateProjectFile(files, songInfo, userId) {
     updateProgress(isBatchProcessing ? null : 70, "生成ARC项目文件...");
     addLog('info', '开始生成ARC项目文件...');
-    const song = songlistJson.songs[0];
+
+    const song = songInfo;
     const res = { charts: [] };
     let validCharts = 0;
-    let difficultiesArr = Array.isArray(song.difficulties) ? song.difficulties : [];
-    if (difficultiesArr.length === 0) {
-        const affFiles = Object.keys(files).filter(name => name.endsWith('.aff'));
-        for (const affFile of affFiles) {
-            const numPrefix = affFile.match(/^(\d+)\./);
-            if (numPrefix) {
-                const ratingClass = parseInt(numPrefix[1]);
-                difficultiesArr.push({
-                    chartDesigner: userId,
-                    rating: -1,
-                    ratingPlus: false,
-                    ratingClass: ratingClass
-                });
-                addLog('info', `自动识别谱面文件: ${affFile}，难度等级: ${ratingClass}`);
-            } else {
-                addLog('warning', `未识别的谱面文件命名: ${affFile}`);
-            }
-        }
+
+    const affFiles = Object.keys(files).filter(name => name.endsWith('.aff'));
+
+    // ✅ 优先用 songlist 里的 difficulties
+    let difficultiesArr = [];
+
+    if (song.difficulties && Array.isArray(song.difficulties)) {
+        difficultiesArr = song.difficulties.map(d => ({
+            ratingClass: d.ratingClass ?? d.level,
+            rating: d.rating ?? -1,
+            ratingPlus: d.ratingPlus ?? false,
+            chartDesigner: d.chartDesigner || userId
+        }));
     }
+
+    // ✅ 用 .aff 文件补全缺失的难度
+    const existingClasses = new Set(difficultiesArr.map(d => d.ratingClass));
+
+    affFiles.forEach(affFile => {
+        const match = affFile.match(/^(\d+)\.aff$/);
+        if (!match) return;
+        const ratingClass = parseInt(match[1]);
+        if (existingClasses.has(ratingClass)) return;
+
+        difficultiesArr.push({
+            ratingClass,
+            rating: (manualDifficulty !== '' && !isNaN(manualDifficulty)) ? parseInt(manualDifficulty) : -1,
+            ratingPlus: false,
+            chartDesigner: manualCharter || userId
+        });
+    });
+
+    if (difficultiesArr.length === 0) {
+        throw new Error("未找到任何有效 .aff 谱面文件");
+    }
+
     for (const chart of difficultiesArr) {
-        const diff = chart.ratingClass;
+        const diff = chart.ratingClass ?? chart.level;
         const chartFile = `${diff}.aff`;
-        // 若用户在手动模式选择了难度名称，则优先使用该名称；否则回退到基于 ratingClass 的映射
-        const difficultyName = (manualDifficultyName && manualDifficultyName.length > 0)
-            ? manualDifficultyName
-            : (DIFF_MAPPING[diff] || `未知${diff}`);
+
+        // 修改：不再使用 manualDifficultyName，仅用 DIFF_MAPPING 显示
+        const difficultyName = DIFF_MAPPING[diff] || `未知${diff}`;
+
+        if (typeof diff !== 'number') {
+            addLog('warning', `跳过无效难度对象: ${JSON.stringify(chart)}`);
+            continue;
+        }
+
         if (!files[chartFile]) {
             addLog('warning', `跳过难度 ${difficultyName}: 缺失文件 ${chartFile}`);
             continue;
         }
+
         const charterName = manualCharter || chart.chartDesigner || userId;
         const artistName = manualIllustrator || songInfo.artist || "Unknown Artist";
         const diffColors = ['#3A6B78FF', '#566947FF', '#482B54FF', '#7C1C30FF', '#433455FF'];
-        const difficultyText = chart.rating !== -1 && chart.rating !== ""
-    ? `${difficultyName} ${chart.rating}${chart.ratingPlus ? '+' : ''}`
-    : difficultyName;
-        
-        // 修复2：只有在存在有效背景且非跳过时才添加 backgroundPath 字段
+        const ratingValue = (
+            !isManualMode && chart.rating !== -1
+        ) ? chart.rating : (
+            manualDifficulty !== '' && !isNaN(manualDifficulty) ? parseInt(manualDifficulty) : -1
+        );
+
+        const difficultyText = ratingValue !== -1
+            ? `${difficultyName} ${ratingValue}${chart.ratingPlus ? '+' : ''}`
+            : difficultyName;
+
+            addLog('debug', `chart.rating = ${chart.rating}, ratingValue = ${ratingValue}, difficultyText = ${difficultyText}`);
         const bgPath = backgroundFileName && backgroundFileName !== 'SKIPPED' ? backgroundFileName : '';
 
         const chartObj = {
             chartPath: chartFile,
-            audioPath: "base.ogg",
+            audioPath: files['base.ogg'] ? 'base.ogg' : 'base.mp3', // 支持 mp3
             jacketPath: "base.jpg",
             baseBpm: song.bpm_base,
             bpmText: song.bpm,
             syncBaseBpm: true,
-            title: song.title_localized.en,
+            title: (song.title_localized && song.title_localized.en) ? song.title_localized.en : (song.title || 'Unknown Title'),
             composer: artistName,
             charter: charterName,
             difficulty: difficultyText,
@@ -460,6 +498,7 @@ async function generateProjectFile(files, songInfo, userId) {
         validCharts++;
         addLog('info', `添加难度: ${difficultyText} (谱师: ${charterName}, 背景: ${bgPath || '无'})`);
     }
+
     if (res.charts.length > 0) {
         const yamlData = jsyaml.dump(res, { encoding: "utf-8" });
         files['project.arcproj'] = new TextEncoder().encode(yamlData);
@@ -468,25 +507,25 @@ async function generateProjectFile(files, songInfo, userId) {
         throw new Error('未生成project.arcproj：无有效难度');
     }
 }
-async function createARCpkg(files, userId) {
+async function createARCpkg(files, userId, songInfo) {
     updateProgress(isBatchProcessing ? null : 90, "创建ARCpkg包...");
     addLog('info', '开始创建ARCpkg包...');
     const zip = new JSZip();
     const packId = "base";
-    const songId = songlistJson.songs[0]?.id || "song_" + Date.now();
+    const songId = songInfo.id || songlistJson.songs[0]?.id || "song_" + Date.now();
     addLog('info', `歌曲ID: ${songId}`);
     const songDir = zip.folder(songId);
     const requiredSongFiles = [
         "base.jpg", "base.ogg", "project.arcproj"
     ];
-    
+
     // 修复1：正确添加背景文件到打包列表
     if (backgroundFileName && backgroundFileName !== 'SKIPPED' && files[backgroundFileName]) {
         requiredSongFiles.push(backgroundFileName);
         addLog('info', `添加背景文件到打包列表: ${backgroundFileName}`);
-    } 
-    
-    
+    }
+
+
     const affFiles = Object.keys(files).filter(name => name.endsWith('.aff'));
     requiredSongFiles.push(...affFiles);
     let copiedFiles = 0;
@@ -530,7 +569,7 @@ async function processZipFile(file, userId = "default_user", tempBackgroundFileN
     if (file.size > MAX_FILE_SIZE) {
         throw new Error(`文件过大（${(file.size / 1024 / 1024).toFixed(2)}MB），最大支持50MB`);
     }
-    
+
     // 只在第一次处理时解压ZIP文件
     if (!currentExtractedFiles) {
         updateProgress(isBatchProcessing ? null : 5, "读取ZIP文件...");
@@ -540,7 +579,7 @@ async function processZipFile(file, userId = "default_user", tempBackgroundFileN
         console.log('规范化后的文件列表:', Object.keys(currentExtractedFiles));
         addLog('info', `ZIP文件解析完成，共识别 ${Object.keys(currentExtractedFiles).length} 个有效文件`);
     }
-    
+
     // 确保背景文件状态正确传递
     // 明确处理 'SKIPPED' 情况：如果收到 'SKIPPED'，在全局状态中保留该标记
     if (tempBackgroundFileName === 'SKIPPED') {
@@ -548,7 +587,7 @@ async function processZipFile(file, userId = "default_user", tempBackgroundFileN
     } else if (tempBackgroundFileName) {
         backgroundFileName = tempBackgroundFileName;
     }
-    
+
     // 检查背景图片
     if (!isManualMode && !backgroundFileName) {
         showBackgroundInputSection();
@@ -563,7 +602,7 @@ async function processZipFile(file, userId = "default_user", tempBackgroundFileN
     const songInfo = await getSongInfoFromFiles(currentExtractedFiles);
     await createRootConfigFiles(currentExtractedFiles, songInfo, userId);
     await generateProjectFile(currentExtractedFiles, songInfo, userId);
-    const arcpkgBlob = await createARCpkg(currentExtractedFiles, userId);
+    const arcpkgBlob = await createARCpkg(currentExtractedFiles, userId, songInfo);
     const safeTitle = songInfo.title.replace(/[^\w\-]/g, '_');
     const fileName = `${safeTitle}.arcpkg`;
     const downloadUrl = URL.createObjectURL(arcpkgBlob);
@@ -614,58 +653,59 @@ function readFileAsArrayBuffer(file) {
 async function getSongInfoFromFiles(files) {
     updateProgress(isBatchProcessing ? null : 30, "解析歌曲配置...");
     addLog('info', '开始解析歌曲配置...');
+
     if (isManualMode) {
-    addLog('info', '已进入手动模式，使用手动输入信息');
-    const affFiles = Object.keys(files).filter(name => name.endsWith('.aff'));
-    if (affFiles.length === 0) {
-        throw new Error("未找到任何 .aff 谱面文件");
-    }
-    
-    const songInfo = {
-        id: `manual_${Date.now()}`,
-        title: currentProcessingFile.name.replace(/\.zip$/i, ''),
-        artist: manualIllustrator || "未知艺术家",
-        bpm: manualBpm,
-        bpm_base: manualBpm,
-        difficulties: [],
-        jacket: 'base.jpg',
-        audio: 'base.ogg',
-        side: 1,
-        bg: "default",
-        version: "1.0.0"
-    };
-    
-    const diffFileMap = {};
-    affFiles.forEach(affFile => {
-        const numPrefix = affFile.match(/^(\d+)\./);
-        if (numPrefix) {
-            const ratingClass = parseInt(numPrefix[1]);
-            diffFileMap[ratingClass] = affFile;
-            addLog('info', `匹配谱面: ${DIFF_MAPPING[ratingClass] || `等级${ratingClass}`} -> ${affFile}`);
-        } else {
-            addLog('warning', `未识别的谱面文件命名: ${affFile}`);
+        addLog('info', '已进入手动模式，使用手动输入信息');
+        const affFiles = Object.keys(files).filter(name => name.endsWith('.aff'));
+        if (affFiles.length === 0) {
+            throw new Error("未找到任何 .aff 谱面文件");
         }
-    });
-    
-    for (const [ratingClass, affFile] of Object.entries(diffFileMap)) {
-        // 修改：使用手动输入的难度等级，构造与 createRootConfigFiles 兼容的 difficulties 对象
-        songInfo.difficulties.push({
-            chartDesigner: manualCharter || "未知谱师",
-            rating: manualDifficulty || -1,
-            ratingPlus: false,
-            ratingClass: parseInt(ratingClass),
-            file: affFile
+
+        const songInfo = {
+            id: currentProcessingFile.name.replace(/\.zip$/i, ''),
+            title: currentProcessingFile.name.replace(/\.zip$/i, ''),
+            artist: manualIllustrator || "未知艺术家",
+            bpm: manualBpm,
+            bpm_base: manualBpm,
+            difficulties: [],
+            jacket: 'base.jpg',
+            audio: files['base.ogg'] ? 'base.ogg' : 'base.mp3', // 支持 mp3
+            side: 1,
+            bg: "default",
+            version: "1.0.0"
+        };
+
+        const diffFileMap = {};
+        affFiles.forEach(affFile => {
+            const numPrefix = affFile.match(/^(\d+)\./);
+            if (numPrefix) {
+                const ratingClass = parseInt(numPrefix[1]);
+                diffFileMap[ratingClass] = affFile;
+                addLog('info', `匹配谱面: ${DIFF_MAPPING[ratingClass] || `等级${ratingClass}`} -> ${affFile}`);
+            } else {
+                addLog('warning', `未识别的谱面文件命名: ${affFile}`);
+            }
         });
-    }
-    
-    if (songInfo.difficulties.length === 0) {
-        throw new Error("未匹配到任何有效谱面");
+
+        for (const [ratingClass, affFile] of Object.entries(diffFileMap)) {
+            songInfo.difficulties.push({
+                chartDesigner: manualCharter || "未知谱师",
+                rating: (manualDifficulty !== '' && !isNaN(manualDifficulty)) ? parseInt(manualDifficulty) : -1,
+                ratingPlus: false,
+                ratingClass: parseInt(ratingClass),
+                file: affFile
+            });
+        }
+
+        if (songInfo.difficulties.length === 0) {
+            throw new Error("未匹配到任何有效谱面");
+        }
+
+        currentSongTitle = songInfo.title;
+        addLog('success', `手动模式歌曲信息生成完成: ${songInfo.title}（${songInfo.difficulties.length}个难度）`);
+        return songInfo;
     }
 
-    currentSongTitle = songInfo.title;
-    addLog('success', `手动模式歌曲信息生成完成: ${songInfo.title}（${songInfo.difficulties.length}个难度）`);
-    return songInfo;
-}
     let songConfigFile = null;
     if (files['slst.txt']) {
         songConfigFile = 'slst.txt';
@@ -678,41 +718,55 @@ async function getSongInfoFromFiles(files) {
         showManualInputSection();
         throw new Error('等待手动输入信息');
     }
+
     const missingFiles = [];
     if (!files['base.jpg']) missingFiles.push('base.jpg');
-    if (!files['base.ogg']) missingFiles.push('base.ogg');
+    if (!files['base.ogg'] && !files['base.mp3']) missingFiles.push('base.ogg 或 base.mp3');
     if (missingFiles.length > 0) {
         throw new Error(`缺失基础文件：${missingFiles.join(', ')}`);
     }
+
     addLog('info', '所有必需文件检查通过');
+
     try {
         const slstData = files[songConfigFile];
         const slstText = new TextDecoder().decode(slstData);
-        const songInfoRaw = JSON.parse(slstText);
+        let songInfoRaw = null;
+
+        // 增强容错：防止 JSON 解析失败
+        try {
+            songInfoRaw = JSON.parse(slstText);
+        } catch (e) {
+            throw new Error("配置文件格式错误：无法解析为 JSON");
+        }
+
         let songData = null;
         if (songInfoRaw.songs && Array.isArray(songInfoRaw.songs) && songInfoRaw.songs.length > 0) {
             songData = songInfoRaw.songs[0];
         } else if (songInfoRaw.id && songInfoRaw.difficulties) {
             songData = songInfoRaw;
         } else {
-            throw new Error("配置文件格式错误：未找到有效的歌曲信息（songs数组为空且不是单曲对象）");
+            throw new Error("配置文件格式错误：未找到有效的歌曲信息");
         }
+
         const songInfo = {
             id: songData.id || `unknown_${Date.now()}`,
             title: songData.title_localized?.en || songData.title || "未知歌曲",
             artist: songData.artist || "未知艺术家",
             bpm: songData.bpm_base || parseInt(songData.bpm) || 200,
-            difficulty: [],
+            difficulties: [],
             jacket: 'base.jpg',
-            audio: 'base.ogg',
+            audio: files['base.ogg'] ? 'base.ogg' : 'base.mp3', // 支持 mp3
             side: songData.side || 1,
             bg: songData.bg || "default",
             version: songData.version || "1.0.0"
         };
+
         const affFiles = Object.keys(files).filter(name => name.endsWith('.aff'));
         if (affFiles.length === 0) {
             throw new Error("未找到任何 .aff 谱面文件");
         }
+
         const diffFileMap = {};
         affFiles.forEach(affFile => {
             const numPrefix = affFile.match(/^(\d+)\./);
@@ -724,10 +778,13 @@ async function getSongInfoFromFiles(files) {
                 addLog('warning', `未识别的谱面文件命名: ${affFile}`);
             }
         });
+
         if (songData.difficulties && Array.isArray(songData.difficulties)) {
             songData.difficulties.forEach(diff => {
                 const ratingClass = diff.ratingClass;
                 if (diffFileMap[ratingClass]) {
+                    if (!songInfo.difficulties) songInfo.difficulties = [];
+
                     songInfo.difficulties.push({
                         level: ratingClass,
                         name: DIFF_MAPPING[ratingClass] || `难度${ratingClass}`,
@@ -738,9 +795,11 @@ async function getSongInfoFromFiles(files) {
                 }
             });
         }
+
         if (songInfo.difficulties.length === 0) {
             throw new Error("未匹配到任何有效谱面");
         }
+
         currentSongTitle = songInfo.title;
         addLog('success', `歌曲信息解析完成: ${songInfo.title}（${songInfo.difficulties.length}个难度）`);
         return songInfo;
@@ -754,12 +813,12 @@ function continueProcessing() {
     // 隐藏所有输入区域
     document.getElementById('inputSection').classList.add('hidden');
     document.getElementById('backgroundInputSection').classList.add('hidden');
-    
+
     // 显示进度区域
     document.getElementById('progressSection').classList.remove('hidden');
-    
+
     const userId = window.currentUserId || "default_user";
-    
+
     // 添加状态验证，避免重复处理
     if (currentProcessingFile) {
         // 如果已经手动输入过信息，直接继续处理，不再检查背景
