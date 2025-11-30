@@ -753,7 +753,7 @@ async function getSongInfoFromFiles(files) {
             id: songData.id || `unknown_${Date.now()}`,
             title: songData.title_localized?.en || songData.title || "未知歌曲",
             artist: songData.artist || "未知艺术家",
-            bpm: songData.bpm_base || parseInt(songData.bpm) || 200,
+            bpm_base: Number.isFinite(+songData.bpm_base) ? +songData.bpm_base : parseFloat(songData.bpm) || 200,
             difficulties: [],
             jacket: 'base.jpg',
             audio: files['base.ogg'] ? 'base.ogg' : 'base.mp3', // 支持 mp3
