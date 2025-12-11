@@ -99,6 +99,58 @@ header p {
     font-weight: 400;
 }
 
+/* Per-aff row layout */
+.aff-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 12px;
+}
+.aff-row .aff-meta {
+    min-width: 220px;
+    color: #374151;
+    font-weight: 700;
+    font-size: 14px;
+}
+.aff-row input[type="text"], .aff-row input[type="number"] {
+    padding: 14px 16px;
+    border-radius: 10px;
+    border: 2px solid #e2e8f0;
+    font-size: 16px;
+    background: white;
+    color: #1e293b;
+    transition: all 0.2s;
+    outline: none;
+}
+
+.aff-row input[type="text"]:focus, .aff-row input[type="number"]:focus {
+    border-color: #6366f1;
+    background: #f8fafc;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+/* Make small input widths consistent */
+.aff-row input[type="text"] { flex: 1 1 60%; }
+.aff-row input[type="number"] { flex: 0 0 120px; }
+
+/* perAffControls container to visually match input section */
+#perAffControls {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    padding: 16px;
+    border-radius: 10px;
+}
+
+#perAffProgress {
+    margin-bottom: 10px;
+    font-weight: 700;
+    color: #334155;
+}
+
+#perAffContainer {
+    display: block;
+}
+
 /* 上传区域样式 */
 .upload-area {
     border: 3px dashed #cbd5e1;

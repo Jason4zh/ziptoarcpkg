@@ -28,25 +28,33 @@
             </div>
         </div>
 
-        <!-- 手动输入区域 -->
         <div class="input-section hidden" id="inputSection">
             <div class="input-group">
-                <label for="illustratorInput">曲绘 Illustration</label>
-                <input type="text" id="illustratorInput" placeholder="请输入曲绘作者名称">
+                <label for="titleInput">谱面标题</label>
+                <input type="text" id="titleInput">
             </div>
             <div class="input-group">
-                <label for="charterInput">谱师 Chart</label>
-                <input type="text" id="charterInput" placeholder="请输入谱师名称">
+                <label for="composerInput">曲师</label>
+                <input type="text" id="composerInput">
             </div>
             <div class="input-group">
                 <label for="bpmInput">BPM</label>
-                <input type="number" id="bpmInput" placeholder="请输入BPM值" min="1" step="1" value="200">
+                <input type="number" id="bpmInput" min="1" step="1" value="200">
             </div>
-            <div class="input-group">
-                <label for="difficultyInput">难度</label>
-                <input type="text" id="difficultyInput" placeholder="请输入难度">
+
+            <!-- 每个 .aff 的逐项输入容器（初始为空，按序显示） -->
+            <div id="manualDifficultiesContainer" style="margin-top:12px"></div>
+
+            <!-- 分步填写控制区域：先填写上方三个输入（title/composer/bpm），点击继续后隐藏它们，逐个显示下面的aff填写 -->
+            <div id="perAffControls" style="margin-top:12px; display:none;">
+                <div id="perAffProgress" style="margin-bottom:8px; font-weight:600; color:#374151;"></div>
+                <div id="perAffContainer"></div>
+                <div style="margin-top:12px;">
+                    <p style="color:#64748b; font-size:13px;">请在下面填写当前 `.aff` 的谱师与难度数，点击上方或下方的“继续”保存并前往下一项；若留空将使用默认值。</p>
+                </div>
             </div>
-            <button class="continue-btn" id="continueBtn">继续处理</button>
+
+            <button class="continue-btn" id="continueBtn">继续</button>
         </div>
 
         <!-- 新增：背景图片输入区域（初始隐藏） -->
