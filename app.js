@@ -1,11 +1,17 @@
-/* 精简版：去冗余、修两 Bug（全局变量串味 + 无后缀 songlist） */
+/* 精简注释，保留全部日志与功能，仅修复两个Bug：
+   1. 全局变量串味  →  resetGlobals()
+   2. 无后缀songlist →  CANDIDATES 增加 'songlist'
+   3. 继续按钮死循环 → handleContinue 只切一次职责
+   4. 计时器null保护 → updateCurrentTime 加判断
+*/
+
 const SONG_FILE_CONFIG = {
-  required: ['base.jpg', 'base.ogg', 'slst.txt'],
-  optional: ['songlist.txt', 'base.mp3']
+    required: ["base.jpg", "base.ogg", "slst.txt"],
+    optional: ["songlist.txt", "base.mp3"]
 };
 const SUPABASE_URL = 'https://hwlzunfsvcjxtjdeiuns.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh3bHp1bmZzdmNqeHRqZGVpdW5zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEwOTg3MzMsImV4cCI6MjA3NjY3NDczM30.44XtqidKR61vv9znx2LW6oGGZAP-javBk5Gpweli5T8';
-supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const DIFF_MAP = ['Past', 'Present', 'Future', 'Beyond', 'Eternal'];
 
 let currentFile, extractedFiles, isBatch = false,
@@ -17,266 +23,279 @@ let currentFile, extractedFiles, isBatch = false,
 /* === DOM 工具 === */
 const $ = id => document.getElementById(id);
 const toggle = (show, ...hide) => {
-  [show].flat().forEach(i => $(i).classList.remove('hidden'));
-  hide.forEach(i => $(i).classList.add('hidden'));
+    [show].flat().forEach(i => $(i).classList.remove('hidden'));
+    hide.forEach(i => $(i).classList.add('hidden'));
 };
 
 /* === 初始化 === */
 document.addEventListener('DOMContentLoaded', () => {
-  setInterval(() => $('currentTime').textContent = `[${new Date().toLocaleTimeString('zh-CN')}]`, 1000);
-  setupListeners();
-  updateCounter();
+    setInterval(updateCurrentTime, 1000);
+    setupListeners();
+    updateCounter();
 });
 
 function setupListeners() {
-  $('fileInput').addEventListener('change', e => e.target.files.length && startBatch([...e.target.files]));
-  $('uploadArea').addEventListener('drop', e => {
-    e.preventDefault();
-    const zips = [...e.dataTransfer.files].filter(f => f.name.endsWith('.zip'));
-    zips.length ? startBatch(zips) : addLog('error', '请上传 ZIP');
-  });
-  $('continueBtn').addEventListener('click', handleContinue);
-  $('backgroundFileInput').addEventListener('change', e => e.target.files.length && handleBg(e.target.files[0]));
-  $('skipBackgroundBtn').addEventListener('click', () => { bgFile = 'SKIPPED'; continueProc(); });
-  ['dragover', 'dragleave'].forEach(ev => {
-    $('uploadArea').addEventListener(ev, e => e.preventDefault());
-    $('backgroundUploadArea').addEventListener(ev, e => e.preventDefault());
-  });
-}
-
-/* === 批处理入口 === */
-function startBatch(files) {
-  isBatch = true;
-  batchTotal = files.length;
-  batchDone = batchFail = 0;
-  currentFile = null;
-  resetGlobals();
-  addLog('info', `=== 批量：共 ${batchTotal} 个 ===`);
-  toggle('progressSection', 'inputSection', 'backgroundInputSection', 'resultSection', 'errorSection');
-  updateProgress(0, `等待（0/${batchTotal}）`);
-  nextFile(files);
-}
-
-function nextFile(files) {
-  if (batchDone + batchFail >= batchTotal) return endBatch();
-  const idx = batchDone + batchFail;
-  currentFile = files[idx];
-  resetGlobals();
-  addLog('info', `\n--- ${idx + 1}/${batchTotal}：${currentFile.name} ---`);
-  processFile(currentFile)
-    .then(() => { batchDone++; updateProgress(Math.round((batchDone + batchFail) / batchTotal * 100), `完成 ${batchDone}/${batchTotal}`); nextFile(files); })
-    .catch(e => {
-      if (e.message === 'waitManual' || e.message === 'waitBg') return; // 停等用户
-      batchFail++; addLog('error', `${currentFile.name} 失败：${e.message}`);
-      nextFile(files);
+    $('fileInput').addEventListener('change', e => e.target.files.length && startBatch([...e.target.files]));
+    $('uploadArea').addEventListener('drop', e => {
+        e.preventDefault();
+        const zips = [...e.dataTransfer.files].filter(f => f.name.endsWith('.zip'));
+        zips.length ? startBatch(zips) : addLog('error', '请上传 ZIP');
+    });
+    $('continueBtn').addEventListener('click', handleContinue);
+    $('backgroundFileInput').addEventListener('change', e => e.target.files.length && handleBg(e.target.files[0]));
+    $('skipBackgroundBtn').addEventListener('click', () => { bgFile = 'SKIPPED'; addLog('info', '已跳过背景'); continueProc(); });
+    ['dragover', 'dragleave'].forEach(ev => {
+        $('uploadArea').addEventListener(ev, e => e.preventDefault());
+        $('backgroundUploadArea').addEventListener(ev, e => e.preventDefault());
     });
 }
 
+/* === 批处理 === */
+function startBatch(files) {
+    isBatch = true;
+    batchTotal = files.length;
+    batchDone = batchFail = 0;
+    currentFile = null;
+    resetGlobals();
+    addLog('info', `=== 批量：共 ${batchTotal} 个 ===`);
+    toggle('progressSection', 'inputSection', 'backgroundInputSection', 'resultSection', 'errorSection');
+    updateProgress(0, `等待（0/${batchTotal}）`);
+    nextFile(files);
+}
+
+function nextFile(files) {
+    if (batchDone + batchFail >= batchTotal) return endBatch();
+    const idx = batchDone + batchFail;
+    currentFile = files[idx];
+    resetGlobals();
+    addLog('info', `\n--- ${idx + 1}/${batchTotal}：${currentFile.name} ---`);
+    processFile(currentFile)
+        .then(() => { batchDone++; updateProgress(Math.round((batchDone + batchFail) / batchTotal * 100), `完成 ${batchDone}/${batchTotal}`); nextFile(files); })
+        .catch(e => {
+            if (e.message === 'waitManual' || e.message === 'waitBg') return;
+            batchFail++; addLog('error', `${currentFile.name} 失败：${e.message}`);
+            nextFile(files);
+        });
+}
+
 function resetGlobals() {
-  extractedFiles = null; manualTitle = ''; manualComposer = ''; manualCharter = ''; manualBpm = 200;
-  manualDiffInputs = {}; manualAffList = []; manualAffIdx = 0; bgFile = ''; isManual = false;
+    extractedFiles = null; manualTitle = ''; manualComposer = ''; manualCharter = ''; manualBpm = 200;
+    manualDiffInputs = {}; manualAffList = []; manualAffIdx = 0; bgFile = ''; isManual = false;
 }
 
-/* === 单文件流程 === */
+/* === 单文件主流程 === */
 async function processFile(file) {
-  if (file.size > 50 * 1024 * 1024) throw new Error('>50MB');
-  if (!extractedFiles) {
-    extractedFiles = normalize(await unzip(file));
-    addLog('info', `解压：${Object.keys(extractedFiles).length} 文件`);
-  }
-  if (!bgFile && !isManual) { toggle('backgroundInputSection', 'progressSection'); throw new Error('waitBg'); }
-  const info = await getSongInfo(extractedFiles);
-  await buildConfigs(extractedFiles, info);
-  const blob = await packARCPKG(extractedFiles, info);
-  const url = URL.createObjectURL(blob);
-  showSuccess(info.title, url, `${info.title.replace(/[^\w\-]/g, '_')}.arcpkg`, blob.size);
-  bumpCounter();
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
+    if (file.size > 50 * 1024 * 1024) throw new Error('>50MB');
+    if (!extractedFiles) {
+        extractedFiles = normalize(await unzip(file));
+        addLog('info', `解压：${Object.keys(extractedFiles).length} 文件`);
+    }
+    if (!bgFile && !isManual) { toggle('backgroundInputSection', 'progressSection'); throw new Error('waitBg'); }
+    const info = await getSongInfo(extractedFiles);
+    await buildConfigs(extractedFiles, info);
+    const blob = await packARCPKG(extractedFiles, info);
+    const url = URL.createObjectURL(blob);
+    showSuccess(info.title, url, `${info.title.replace(/[^\w\-]/g, '_')}.arcpkg`, blob.size);
+    bumpCounter();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
-/* === 解压 + 规范化 === */
 async function unzip(file) {
-  const zip = await JSZip.loadAsync(file);
-  const f = {};
-  for (const z of Object.values(zip.files)) {
-    if (z.dir || z.name.includes('__MACOSX')) continue;
-    const name = z.name.split('/').pop();
-    if (name) f[name] = await z.async('arraybuffer');
-  }
-  return f;
+    const zip = await JSZip.loadAsync(file);
+    const f = {};
+    for (const z of Object.values(zip.files)) {
+        if (z.dir || z.name.includes('__MACOSX')) continue;
+        const name = z.name.split('/').pop();
+        if (name) f[name] = await z.async('arraybuffer');
+    }
+    return f;
 }
 
 function normalize(files) {
-  const jpg = Object.keys(files).filter(n => n.toLowerCase().endsWith('.jpg'));
-  const pick = jpg.find(x => /1080[_-]?base\.jpg$/i.test(x)) || jpg.find(x => /(^|[_-])base\.jpg$/i.test(x)) || jpg.find(x => /background/i.test(x));
-  if (pick && !files['base.jpg']) files['base.jpg'] = files[pick];
-  if (!files['base.ogg'] && files['base.mp3']) files['base.ogg'] = files['base.mp3'];
-  return files;
+    const jpg = Object.keys(files).filter(n => n.toLowerCase().endsWith('.jpg'));
+    const pick = jpg.find(x => /1080[_-]?base\.jpg$/i.test(x)) || jpg.find(x => /(^|[_-])base\.jpg$/i.test(x)) || jpg.find(x => /background/i.test(x));
+    if (pick && !files['base.jpg']) { files['base.jpg'] = files[pick]; addLog('info', `别名 base.jpg ← ${pick}`); }
+    if (!files['base.ogg'] && files['base.mp3']) { files['base.ogg'] = files['base.mp3']; addLog('info', '别名 base.ogg ← base.mp3'); }
+    return files;
 }
 
 /* === 歌曲信息 === */
 async function getSongInfo(files) {
-  const cfg = ['slst.txt', 'songlist.txt', 'songlist'].find(n => files[n]);
-  if (!cfg) { toggle('inputSection', 'progressSection'); isManual = true; throw new Error('waitManual'); }
-  const txt = new TextDecoder().decode(files[cfg]);
-  let data = JSON.parse(txt);
-  if (data.songs?.length) data = data.songs[0];
-  const affs = Object.keys(files).filter(n => n.endsWith('.aff'));
-  if (!affs.length) throw new Error('无 .aff');
-  const info = {
-    id: data.id || `song_${Date.now()}`,
-    title: data.title_localized?.en || data.title || 'Unknown',
-    artist: data.artist || 'Unknown',
-    bpm: data.bpm_base || +data.bpm || 200,
-    difficulties: []
-  };
-  affs.forEach(n => {
-    const m = n.match(/^(\d+)\.aff$/);
-    if (m) {
-      const rc = +m[1];
-      const diff = (data.difficulties || []).find(d => d.ratingClass === rc) || {};
-      info.difficulties.push({ ratingClass: rc, rating: diff.rating || -1, chartDesigner: diff.chartDesigner || '' });
-    }
-  });
-  if (!info.difficulties.length) throw new Error('无有效难度');
-  return info;
+    const CANDIDATES = ['slst.txt', 'songlist.txt', 'songlist'];          // 支持无后缀
+    const cfg = CANDIDATES.find(n => files[n]);
+    if (!cfg) { toggle('inputSection', 'progressSection'); isManual = true; throw new Error('waitManual'); }
+    const txt = new TextDecoder().decode(files[cfg]);
+    let data = JSON.parse(txt);
+    if (data.songs?.length) data = data.songs[0];
+    const affs = Object.keys(files).filter(n => n.endsWith('.aff'));
+    if (!affs.length) throw new Error('无 .aff');
+    const info = {
+        id: data.id || `song_${Date.now()}`,
+        title: data.title_localized?.en || data.title || 'Unknown',
+        artist: data.artist || 'Unknown',
+        bpm: data.bpm_base || +data.bpm || 200,
+        difficulties: []
+    };
+    affs.forEach(n => {
+        const m = n.match(/^(\d+)\.aff$/);
+        if (m) {
+            const rc = +m[1];
+            const diff = (data.difficulties || []).find(d => d.ratingClass === rc) || {};
+            info.difficulties.push({ ratingClass: rc, rating: diff.rating || -1, chartDesigner: diff.chartDesigner || '' });
+        }
+    });
+    if (!info.difficulties.length) throw new Error('无有效难度');
+    return info;
 }
 
 /* === 手动模式 === */
 function handleContinue() {
-  if ($('perAffControls').style.display !== 'none') return saveAffAndNext();
-  manualTitle = $('titleInput').value.trim() || currentFile.name.replace(/\.zip$/i, '');
-  manualComposer = $('composerInput').value.trim();
-  manualBpm = +$('bpmInput').value || 200;
-  isManual = true;
-  buildManualAffList();
-  toggleAffSeq();
+    // 如果已经在 aff 阶段，直接保存并下一项
+    if ($('perAffControls').style.display === 'block') return saveAffAndNext();
+    // 第一次进入：收集顶部三项，进入 aff 序列
+    manualTitle = $('titleInput').value.trim() || currentFile.name.replace(/\.zip$/i, '');
+    manualComposer = $('composerInput').value.trim();
+    manualBpm = +$('bpmInput').value || 200;
+    isManual = true;
+    buildManualAffList();
+    toggleAffSeq();
+    // 按钮职责永久切换
+    const btn = $('continueBtn');
+    btn.textContent = '继续';
+    btn.onclick = saveAffAndNext;
 }
 
 function buildManualAffList() {
-  const affs = Object.keys(extractedFiles).filter(n => n.endsWith('.aff'));
-  manualAffList = affs.map(n => {
-    const m = n.match(/^(\d+)\.aff$/);
-    return m ? { rc: +m[1], file: n } : null;
-  }).filter(Boolean).sort((a, b) => a.rc - b.rc);
-  manualAffList.forEach(x => manualDiffInputs[x.rc] = { chartDesigner: '', rating: '' });
+    const affs = Object.keys(extractedFiles).filter(n => n.endsWith('.aff'));
+    manualAffList = affs.map(n => {
+        const m = n.match(/^(\d+)\.aff$/);
+        return m ? { rc: +m[1], file: n } : null;
+    }).filter(Boolean).sort((a, b) => a.rc - b.rc);
+    manualAffList.forEach(x => manualDiffInputs[x.rc] = { chartDesigner: '', rating: '' });
 }
 
 function toggleAffSeq() {
-  const groups = $('inputSection').querySelectorAll('.input-group');
-  [...groups].slice(0, 3).forEach(g => g.style.display = 'none');
-  $('perAffControls').style.display = 'block';
-  manualAffIdx = 0;
-  renderAff();
+    const groups = $('inputSection').querySelectorAll('.input-group');
+    [...groups].slice(0, 3).forEach(g => g.style.display = 'none');
+    $('perAffControls').style.display = 'block';
+    manualAffIdx = 0;
+    renderAff();
 }
 
 function renderAff() {
-  const it = manualAffList[manualAffIdx];
-  if (!it) return finishAffSeq();
-  $('perAffProgress').textContent = `${manualAffIdx + 1}/${manualAffList.length}：${it.file}（${DIFF_MAP[it.rc] || `Lv${it.rc}`}）`;
-  $('perAffContainer').innerHTML = `
-    <div class="aff-row">
-      <span class="aff-meta">${it.file} （${DIFF_MAP[it.rc] || `Lv${it.rc}`}）</span>
-      <input id="charter${it.rc}" type="text" placeholder="谱师" value="${manualDiffInputs[it.rc].chartDesigner}">
-      <input id="rating${it.rc}" type="number" placeholder="难度" value="${manualDiffInputs[it.rc].rating}">
-    </div>`;
+    const it = manualAffList[manualAffIdx];
+    if (!it) return finishAffSeq();
+    $('perAffProgress').textContent = `${manualAffIdx + 1}/${manualAffList.length}：${it.file}（${DIFF_MAP[it.rc] || `Lv${it.rc}`}）`;
+    $('perAffContainer').innerHTML = `
+        <div class="aff-row">
+            <span class="aff-meta">${it.file} （${DIFF_MAP[it.rc] || `Lv${it.rc}`}）</span>
+            <input id="charter${it.rc}" type="text" placeholder="谱师" value="${manualDiffInputs[it.rc].chartDesigner}">
+            <input id="rating${it.rc}" type="number" placeholder="难度" value="${manualDiffInputs[it.rc].rating}">
+        </div>`;
 }
 
 function saveAffAndNext() {
-  const it = manualAffList[manualAffIdx];
-  manualDiffInputs[it.rc].chartDesigner = $(`charter${it.rc}`).value.trim() || manualComposer || 'Unknown';
-  manualDiffInputs[it.rc].rating = +$(`rating${it.rc}`).value || -1;
-  manualAffIdx++;
-  manualAffIdx >= manualAffList.length ? finishAffSeq() : renderAff();
+    const it = manualAffList[manualAffIdx];
+    if (!it) return finishAffSeq();
+    manualDiffInputs[it.rc].chartDesigner = $(`charter${it.rc}`).value.trim() || manualComposer || 'Unknown';
+    manualDiffInputs[it.rc].rating = +$(`rating${it.rc}`).value || -1;
+    manualAffIdx++;
+    manualAffIdx >= manualAffList.length ? finishAffSeq() : renderAff();
 }
 
 function finishAffSeq() {
-  $('perAffControls').style.display = 'none';
-  toggle('progressSection', 'inputSection');
-  continueProc();
+    $('perAffControls').style.display = 'none';
+    toggle('progressSection', 'inputSection');
+    continueProc();
 }
 
 /* === 配置生成 === */
 async function buildConfigs(files, info) {
-  const packId = info.set || 'pack001';
-  files.packlist = new TextEncoder().encode(JSON.stringify({ packs: [{ id: packId, name_localized: { en: `Pack ${packId}` } }] }, null, 2));
-  const songlist = { songs: [info] };
-  files.songlist = new TextEncoder().encode(JSON.stringify(songlist, null, 2));
+    const packId = info.set || 'pack001';
+    files.packlist = new TextEncoder().encode(JSON.stringify({ packs: [{ id: packId, name_localized: { en: `Pack ${packId}` } }] }, null, 2));
+    const songlist = { songs: [info] };
+    files.songlist = new TextEncoder().encode(JSON.stringify(songlist, null, 2));
 }
 
 /* === 打包 === */
 async function packARCPKG(files, info) {
-  const zip = new JSZip();
-  const songId = info.id;
-  const dir = zip.folder(songId);
-  const needs = ['base.jpg', 'base.ogg', 'project.arcproj', ...Object.keys(files).filter(n => n.endsWith('.aff'))];
-  if (bgFile && bgFile !== 'SKIPPED') needs.push(bgFile);
-  needs.forEach(n => files[n] && dir.file(n, files[n]));
-  zip.file('index.yml', jsyaml.dump([{ directory: songId, identifier: `${userId}.${songId}`, settingsFile: 'project.arcproj', version: 0, type: 'level' }]));
-  return zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 9 } });
+    const zip = new JSZip();
+    const songId = info.id;
+    const dir = zip.folder(songId);
+    const needs = ['base.jpg', 'base.ogg', 'project.arcproj', ...Object.keys(files).filter(n => n.endsWith('.aff'))];
+    if (bgFile && bgFile !== 'SKIPPED') needs.push(bgFile);
+    needs.forEach(n => files[n] && dir.file(n, files[n]));
+    zip.file('index.yml', jsyaml.dump([{ directory: songId, identifier: `${userId}.${songId}`, settingsFile: 'project.arcproj', version: 0, type: 'level' }]));
+    return zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 9 } });
 }
 
 /* === 继续处理 === */
 function continueProc() {
-  toggle('progressSection', 'inputSection', 'backgroundInputSection');
-  processFile(currentFile).catch(() => {});
+    toggle('progressSection', 'inputSection', 'backgroundInputSection');
+    processFile(currentFile).catch(() => {});
 }
 
 function handleBg(file) {
-  readFileAsArrayBuffer(file).then(b => {
-    bgFile = file.name;
-    extractedFiles[bgFile] = b;
-    continueProc();
-  });
+    readFileAsArrayBuffer(file).then(b => {
+        bgFile = file.name;
+        extractedFiles[bgFile] = b;
+        continueProc();
+    });
 }
 
 /* === 工具 === */
 const readFileAsArrayBuffer = f => new Promise((resolve, reject) => {
-  const r = new FileReader();
-  r.onload = () => resolve(r.result);
-  r.onerror = () => reject(new Error('read fail'));
-  r.readAsArrayBuffer(f);
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(new Error('read fail'));
+    r.readAsArrayBuffer(f);
 });
 
 function addLog(type, msg) {
-  const box = $('logsContainer');
-  box.insertAdjacentHTML('beforeend', `<div class="log-entry ${type}"><span class="log-time">[${new Date().toLocaleTimeString('zh-CN')}]</span><span class="log-message">${msg}</span></div>`);
-  box.scrollTop = box.scrollHeight;
+    const box = $('logsContainer');
+    box.insertAdjacentHTML('beforeend', `<div class="log-entry ${type}"><span class="log-time">[${new Date().toLocaleTimeString('zh-CN')}]</span><span class="log-message">${msg}</span></div>`);
+    box.scrollTop = box.scrollHeight;
+}
+
+function updateCurrentTime() {
+    const el = $('currentTime');
+    if (!el) return;                                   // 防止 null 报错
+    el.textContent = `[${new Date().toLocaleTimeString('zh-CN')}]`;
 }
 
 function updateProgress(p, txt) {
-  $('progressText').textContent = txt || `${p}%`;
-  $('progressBar').value = p;
+    $('progressText').textContent = txt || `${p}%`;
+    $('progressBar').value = p;
 }
 
 function showSuccess(title, url, name, size) {
-  toggle('resultSection', 'errorSection');
-  $('resultContent').insertAdjacentHTML('beforeend', `
-    <div style="margin-bottom:20px;border-bottom:1px dashed #eee;padding-bottom:20px;">
-      <p>《${title}》打包完成</p>
-      <div style="margin-top:15px;"><a href="${url}" download="${name}" class="download-btn">📥 ${name}</a></div>
-      <p style="margin-top:15px;color:#7f8c8d;">大小：${(size / 1024 / 1024).toFixed(2)}MB</p>
-    </div>`);
-  addLog('success', `完成：${name}`);
+    toggle('resultSection', 'errorSection');
+    $('resultContent').insertAdjacentHTML('beforeend', `
+        <div style="margin-bottom:20px;border-bottom:1px dashed #eee;padding-bottom:20px;">
+            <p>《${title}》打包完成</p>
+            <div style="margin-top:15px;"><a href="${url}" download="${name}" class="download-btn">📥 ${name}</a></div>
+            <p style="margin-top:15px;color:#7f8c8d;">大小：${(size / 1024 / 1024).toFixed(2)}MB</p>
+        </div>`);
+    addLog('success', `完成：${name}`);
 }
 
 async function bumpCounter() {
-  try {
-    const { data } = await supabase.from('times').select('times').single();
-    const n = (data?.times || 0) + 1;
-    await supabase.from('times').update({ times: n }).eq('id', 1);
-    $('successCount').textContent = n;
-  } catch {}
+    try {
+        const { data } = await supabase.from('times').select('times').single();
+        const n = (data?.times || 0) + 1;
+        await supabase.from('times').update({ times: n }).eq('id', 1);
+        $('successCount').textContent = n;
+    } catch {}
 }
 
 async function updateCounter() {
-  try {
-    const { data } = await supabase.from('times').select('times').single();
-    $('successCount').textContent = data?.times || 0;
-  } catch {}
+    try {
+        const { data } = await supabase.from('times').select('times').single();
+        $('successCount').textContent = data?.times || 0;
+    } catch {}
 }
 
 function endBatch() {
-  isBatch = false;
-  addLog('success', `=== 批量完成：成功 ${batchDone} / 总计 ${batchTotal} ===`);
+    isBatch = false;
+    addLog('success', `=== 批量完成：成功 ${batchDone} / 总计 ${batchTotal} ===`);
 }
