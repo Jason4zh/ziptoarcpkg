@@ -636,6 +636,13 @@
         const bgFileName = document.getElementById('bg-file-name');
         const songlistImport = document.getElementById('slst-import');
 
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedUsername = localStorage.getItem('username');
+            if (savedUsername) {
+                usernameInput.value = savedUsername;
+            }
+        });
+
         let affFiles = [];
         let chartInfo = {};
         let songInfo = {};
@@ -797,6 +804,7 @@
         });
 
         startConvertButton.addEventListener('click', () => {
+            if (usernameInput.value) localStorage.setItem('username', usernameInput.value);
             songInfo.name = songNameInput.value || 'Unknown';
             songInfo.artist = artistNameInput.value || '未知';
             songInfo.illustrator = illustratorNameInput.value || '未知';
