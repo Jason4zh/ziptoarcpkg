@@ -733,7 +733,7 @@
                         song.difficulties.forEach((diff) => {
                             if (diff.rating === 0) return;
                             illustratorNameInput.value = diff.jacketDesigner || '';
-                            chartInfo[levels[diff.difficulty]] = {
+                            chartInfo[levels[diff.difficulties.indexOf(diff)]] = {
                                 name: diff.chartDesigner || '',
                                 level: diff.rating || ''
                             };
@@ -869,5 +869,6 @@
         });
     </script>
 </body>
+
 
 </html>
