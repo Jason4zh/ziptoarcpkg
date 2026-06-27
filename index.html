@@ -431,6 +431,26 @@
         </header>
         <div class="main-content">
             <section class="upload-section">
+                <h3><i class="fas fa-file-archive"></i> 上传ZIP包</h3>
+                <p class="hint">ZIP中应包含0~4.aff、base.ogg/base.mp3、base.jpg或1080_base.jpg。可自动读取songlist文本文件。</p>
+                <div class="form-group">
+                    <label class="file-upload-wrapper">
+                        <input type="file" id="zip-upload" accept=".zip" class="file-input">
+                        <span class="file-upload-btn">
+                            <i class="fas fa-file-archive"></i> 选择ZIP文件
+                        </span>
+                    </label>
+                    <div id="zip-file-info" class="file-selected-info" style="display: none;">
+                        <i class="fas fa-check-circle"></i>
+                        <span class="file-selected-name" id="zip-file-name"></span>
+                    </div>
+                </div>
+                <div id="zip-summary" class="status-message" style="display: none;">
+                    <strong>ZIP解析结果：</strong>
+                    <p id="zip-details"></p>
+                </div>
+            </section>
+            <section class="upload-section">
                 <h3><i class="fas fa-upload"></i> 上传.aff谱面文件</h3>
                 <p class="hint">按顺序上传文件：0.aff (Past) 到 4.aff (Eternal)。上传完成后点击"停止上传"。</p>
                 <div class="difficulty-status">
@@ -635,6 +655,11 @@
         const bgFileInfo = document.getElementById('bg-file-info');
         const bgFileName = document.getElementById('bg-file-name');
         const songlistImport = document.getElementById('slst-import');
+        const zipUpload = document.getElementById('zip-upload');
+        const zipFileInfo = document.getElementById('zip-file-info');
+        const zipFileName = document.getElementById('zip-file-name');
+        const zipSummary = document.getElementById('zip-summary');
+        const zipDetails = document.getElementById('zip-details');
 
         document.addEventListener('DOMContentLoaded', () => {
             const savedUsername = localStorage.getItem('username');
@@ -642,6 +667,84 @@
                 usernameInput.value = savedUsername;
             }
         });
+
+        function showFileInfo(container, nameElement, fileName) {
+            nameElement.textContent = fileName;
+            container.style.display = 'flex';
+        }
+
+        function normalizeName(fullName) {
+            return fullName.replace(/\\/g, '/').split('/').pop();
+        }
+
+        function readSonglistFile(file) {
+            const reader = new FileReader();
+            const confirmImportButton = document.getElementById('confirm-import');
+            const songlistSummary = document.getElementById('songlist-summary');
+            const songlistDetails = document.getElementById('songlist-details');
+
+            reader.onload = function (e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    let song = {}
+                    try {
+                        song = data.songs[0];
+                    }
+                    catch(error) {
+                        song = data;
+                    }
+
+                    songlistDetails.innerHTML = `
+                        <ul>
+                            <li><strong>标题：</strong> ${song.title_localized?.en || '未知'}</li>
+                            <li><strong>艺术家：</strong> ${song.artist || '未知'}</li>
+                            <li><strong>BPM：</strong> ${song.bpm_base || '未知'}</li>
+                            <li><strong>难度：</strong> ${song.difficulties.map(d => d.rating).join(', ') || '无'}</li>
+                        </ul>
+                    `;
+                    songlistSummary.style.display = 'block';
+                    confirmImportButton.disabled = false;
+
+                    confirmImportButton.addEventListener('click', () => {
+                        document.getElementById('song-name').value = song.title_localized?.en || '';
+                        document.getElementById('artist-name').value = song.artist || '';
+                        document.getElementById('bpm').value = song.bpm_base || '';
+
+                        nextLevelButton.disabled = true;
+                        document.getElementById('current-difficulty').textContent = '全部难度已填写完毕';
+                        songNameInput.value = song.title_localized?.en || '';
+                        artistNameInput.value = song.artist || '';
+                        bpmInput.value = song.bpm_base || '';
+                        sideInputs[0].checked = song.side;
+                        song.difficulties.forEach((diff) => {
+                            if (diff.rating === 0) return;
+                            illustratorNameInput.value = diff.jacketDesigner || '';
+                            chartInfo[levels[song.difficulties.findIndex(d => d === diff)]] = {
+                                name: diff.chartDesigner || '',
+                                level: diff.rating || ''
+                            };
+                        });
+                        confirmImportButton.disabled = true;
+                    }, { once: true });
+                } catch (error) {
+                    alert('解析 songlist 文件失败，请确保文件格式正确');
+                    console.error('JSON 解析错误：', error);
+                    songlistSummary.style.display = 'none';
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function addZipFileToState(stateKey, entry, displayInfo, infoElement) {
+            if (!entry) return null;
+            return entry.async('blob').then((blob) => {
+                const name = normalizeName(entry.name);
+                const fileObject = { name, blob };
+                stateKey.value = fileObject;
+                showFileInfo(infoElement, displayInfo, name);
+                return fileObject;
+            });
+        }
 
         let affFiles = [];
         let chartInfo = {};
@@ -685,91 +788,137 @@
 
         songlistImport.addEventListener('change', (event) => {
             const file = event.target.files[0];
-            const confirmImportButton = document.getElementById('confirm-import');
-            const songlistSummary = document.getElementById('songlist-summary');
-            const songlistDetails = document.getElementById('songlist-details');
-
             if (!file) {
-                confirmImportButton.disabled = true;
-                songlistSummary.style.display = 'none';
+                document.getElementById('confirm-import').disabled = true;
+                document.getElementById('songlist-summary').style.display = 'none';
+                return;
+            }
+            readSonglistFile(file);
+        });
+
+        zipUpload.addEventListener('change', async (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+            if (!file.name.toLowerCase().endsWith('.zip')) {
+                alert('请选择ZIP文件进行上传');
+                zipUpload.value = '';
                 return;
             }
 
-            const reader = new FileReader();
-            reader.onload = function (e) {
-                try {
-                    const data = JSON.parse(e.target.result);
-                    let song = {}
-                    try {
-                        song = data.songs[0];
-                    }
-                    catch(error) {
-                        song = data;
-                    }
+            zipFileName.textContent = file.name;
+            zipFileInfo.style.display = 'flex';
+            zipSummary.style.display = 'none';
 
-                    // 显示songlist内容概述
-                    songlistDetails.innerHTML = `
-                        <ul>
-                            <li><strong>标题：</strong> ${song.title_localized?.en || '未知'}</li>
-                            <li><strong>艺术家：</strong> ${song.artist || '未知'}</li>
-                            <li><strong>BPM：</strong> ${song.bpm_base || '未知'}</li>
-                            <li><strong>难度：</strong> ${song.difficulties.map(d => d.rating).join(', ') || '无'}</li>
-                        </ul>
-                    `;
-                    songlistSummary.style.display = 'block';
-                    confirmImportButton.disabled = false;
+            affFiles = [];
+            chartInfo = {};
+            audioFile = '';
+            imageFile = '';
+            bgFile = '';
+            affFileInfo.style.display = 'none';
+            audioFileInfo.style.display = 'none';
+            imageFileInfo.style.display = 'none';
+            bgFileInfo.style.display = 'none';
+            pastStatus.textContent = '❌';
+            presentStatus.textContent = '❌';
+            futureStatus.textContent = '❌';
+            beyondStatus.textContent = '❌';
+            eternalStatus.textContent = '❌';
 
-                    confirmImportButton.addEventListener('click', () => {
-                        document.getElementById('song-name').value = song.title_localized?.en || '';
-                        document.getElementById('artist-name').value = song.artist || '';
-                        document.getElementById('bpm').value = song.bpm_base || '';
+            try {
+                const zip = await JSZip.loadAsync(file);
+                const entries = Object.values(zip.files).filter((entry) => !entry.dir);
+                const affEntries = entries.filter((entry) => /^[0-4]\.aff$/i.test(normalizeName(entry.name)));
+                const audioEntry = entries.find((entry) => /^(base\.ogg|base\.mp3)$/i.test(normalizeName(entry.name)));
+                const coverEntries = entries.filter((entry) => /\.jpe?g$/i.test(normalizeName(entry.name)) && /base/i.test(normalizeName(entry.name)));
+                const bgEntry = entries.find((entry) => /\.jpe?g$/i.test(normalizeName(entry.name)) && !/base/i.test(normalizeName(entry.name)));
+                const songlistEntry = entries.find((entry) => /^(songlist|slst)(\.txt|\.json)?$/i.test(normalizeName(entry.name)));
 
-                        nextLevelButton.disabled = true;
-                        document.getElementById('current-difficulty').textContent = '全部难度已填写完毕';
-                        songNameInput.value = song.title_localized?.en || '';
-                        artistNameInput.value = song.artist || '';
-                        bpmInput.value = song.bpm_base || '';
-                        sideInputs[0].checked = song.side;
-                        song.difficulties.forEach((diff) => {
-                            if (diff.rating === 0) return;
-                            illustratorNameInput.value = diff.jacketDesigner || '';
-                            chartInfo[levels[song.difficulties.findIndex(d => d === diff)]] = {
-                                name: diff.chartDesigner || '',
-                                level: diff.rating || ''
-                            };
-                        });
-                        confirmImportButton.disabled = true;
-                    }, { once: true });
-                } catch (error) {
-                    alert('解析 songlist 文件失败，请确保文件格式正确');
-                    console.error('JSON 解析错误：', error);
-                    songlistSummary.style.display = 'none';
+                if (affEntries.length === 0) {
+                    alert('ZIP中未找到0~4.aff谱面文件，请检查ZIP内容');
+                } else {
+                    affFiles = [];
+                    await Promise.all(affEntries.map(async (entry) => {
+                        const blob = await entry.async('blob');
+                        affFiles.push({ name: normalizeName(entry.name), blob });
+                    }));
+                    affFiles.sort((a, b) => parseInt(a.name.split('.')[0]) - parseInt(b.name.split('.')[0]));
+                    pastStatus.textContent = affFiles.some((f) => f.name.startsWith('0.')) ? '✅️' : '❌';
+                    presentStatus.textContent = affFiles.some((f) => f.name.startsWith('1.')) ? '✅️' : '❌';
+                    futureStatus.textContent = affFiles.some((f) => f.name.startsWith('2.')) ? '✅️' : '❌';
+                    beyondStatus.textContent = affFiles.some((f) => f.name.startsWith('3.')) ? '✅️' : '❌';
+                    eternalStatus.textContent = affFiles.some((f) => f.name.startsWith('4.')) ? '✅️' : '❌';
+                    affFileName.textContent = affFiles.map((f) => f.name).join(', ');
+                    affFileInfo.style.display = 'flex';
                 }
-            };
-            reader.readAsText(file);
+
+                if (audioEntry) {
+                    const audioBlob = await audioEntry.async('blob');
+                    audioFile = { name: normalizeName(audioEntry.name), blob: audioBlob };
+                    showFileInfo(audioFileInfo, audioFileName, audioFile.name);
+                }
+
+                let coverEntry = null;
+                const coverByName = ['base.jpg', '1080_base.jpg'];
+                for (const name of coverByName) {
+                    coverEntry = coverEntries.find((entry) => normalizeName(entry.name).toLowerCase() === name);
+                    if (coverEntry) break;
+                }
+                if (!coverEntry && coverEntries.length > 0) {
+                    coverEntry = coverEntries[0];
+                }
+                if (coverEntry) {
+                    const imageBlob = await coverEntry.async('blob');
+                    imageFile = { name: normalizeName(coverEntry.name), blob: imageBlob };
+                    showFileInfo(imageFileInfo, imageFileName, imageFile.name);
+                }
+
+                if (bgEntry) {
+                    const bgBlob = await bgEntry.async('blob');
+                    bgFile = { name: normalizeName(bgEntry.name), blob: bgBlob };
+                    showFileInfo(bgFileInfo, bgFileName, bgFile.name);
+                }
+
+                if (songlistEntry) {
+                    const text = await songlistEntry.async('text');
+                    const songlistFile = new File([text], normalizeName(songlistEntry.name), { type: 'text/plain' });
+                    readSonglistFile(songlistFile);
+                }
+
+                const loadedInfo = [
+                    affFiles.length ? `谱面: ${affFiles.map((f) => f.name).join(', ')}` : '谱面：未找到',
+                    audioFile ? `音频: ${audioFile.name}` : '音频：未找到',
+                    imageFile ? `封面: ${imageFile.name}` : '封面：未找到',
+                    bgFile ? `背景: ${bgFile.name}` : '背景：未找到',
+                    songlistEntry ? `songlist: ${normalizeName(songlistEntry.name)}` : 'songlist: 未读取'
+                ];
+                zipDetails.innerHTML = `<p>${loadedInfo.join('<br>')}</p>`;
+                zipSummary.style.display = 'block';
+            } catch (error) {
+                console.error('ZIP解析失败：', error);
+                alert('ZIP解析失败，请检查文件是否为有效ZIP');
+                zipFileInfo.style.display = 'none';
+                zipSummary.style.display = 'none';
+            }
         });
 
         audioUpload.addEventListener('change', (event) => {
             const file = event.target.files[0];
             if (!file) return;
-            audioFileName.textContent = file.name;
-            audioFileInfo.style.display = 'flex';
+            showFileInfo(audioFileInfo, audioFileName, file.name);
             audioFile = file;
         });
 
         imageUpload.addEventListener('change', (event) => {
             const file = event.target.files[0];
             if (!file) return;
-            imageFileName.textContent = file.name;
-            imageFileInfo.style.display = 'flex';
+            showFileInfo(imageFileInfo, imageFileName, file.name);
             imageFile = file;
         });
 
         bgUpload.addEventListener('change', (event) => {
             const file = event.target.files[0];
             if (!file) return;
-            bgFileName.textContent = file.name;
-            bgFileInfo.style.display = 'flex';
+            showFileInfo(bgFileInfo, bgFileName, file.name);
             bgFile = file;
         });
 
@@ -826,10 +975,10 @@
             zip.file('index.yml', zipEntries);
 
             const folder = zip.folder(songInfo.name);
-            folder.file(audioFile.name, audioFile);
-            folder.file(imageFile.name, imageFile);
+            folder.file(audioFile.name, audioFile.blob || audioFile);
+            folder.file(imageFile.name, imageFile.blob || imageFile);
             affFiles.forEach((affFile) => {
-                folder.file(affFile.name, affFile);
+                folder.file(affFile.name, affFile.blob || affFile);
             });
             function generateProjectFile() {
                 let chartEntries = 'charts:\n';
@@ -858,7 +1007,7 @@
             }
             folder.file('project.arcproj', generateProjectFile());
             if (bgFile) {
-                folder.file(bgFile.name, bgFile);
+                folder.file(bgFile.name, bgFile.blob || bgFile);
             }
             document.getElementById('download').disabled = false;
             document.getElementById('download').addEventListener('click', () => {
